@@ -89,7 +89,7 @@ passed that check. Preserve this rule during all later dependency changes.
 
 | Prototype | Branch / PR | Status | Next step / blocker |
 | --- | --- | --- | --- |
-| Ambient local | `prototype/ambient-local`, `f1f1d79` | Return offers user-confirmed; choices/free text now directly in floating popup | Reload extension to verify native panel opening; improve Sheet capture and full investigation |
+| Ambient local | `prototype/ambient-local`, `4c50df2` | Inline popup user-confirmed; added completion review/recovery and collapsed message findings | Reload and continue prior invoice task to validate recovery; improve Sheet capture |
 | Teammate prototype | — | Awaiting teammate update | Record branch and comparison-ready milestone |
 
 ## Handoff log
@@ -145,3 +145,13 @@ Append concise entries: date, owner, commit/PR, changes, verification, next step
   types, and build pass. Synthetic browser checks verified custom and selected
   submissions, preserved drafts, progress, and simulated error recovery. Extension
   reload requested; native Chrome panel opening remains to be verified live.
+- 2026-09-10 — `4c50df2`: user confirmed popup works, then reported a premature
+  investigation finish. Added tool-free completion review with up to two recovery
+  passes in the same task/history, a 10-minute overall limit, explicit blocked
+  outcomes, and Stop/scope cancellation across review. Ambient stays suspended.
+  Findings persist with their producing response and collapse by default; earlier
+  attempts collapse too. Gmail conversation rows are included in inspected targets.
+  All 36 tests, types, and build pass. Real Astra synthetic review tests correctly
+  continued recoverable work, stopped for sign-in, and accepted completed work.
+  Chat UI was visually and interactively checked. Backend restarted; extension
+  reload and live continuation requested. No dependencies changed.
