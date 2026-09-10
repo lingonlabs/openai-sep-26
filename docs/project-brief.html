@@ -116,7 +116,7 @@
       <p>An ambient browser extension for finance leaders: recognize the workflow, offer useful help, and carry an investigation across the applications already open.</p>
       <div class="tags"><span class="tag">NetSuite sandbox</span><span class="tag">Gmail in browser</span><span class="tag">Agents SDK + Astra</span><span class="tag">Local application</span></div>
     </header>
-    <div class="status"><span><strong>Status:</strong> agreed direction; implementation pending</span><span><strong>Team:</strong> two developers, separate computers</span><span><strong>Working title:</strong> Ambient Close Assistant</span></div>
+    <div class="status"><span><strong>Status:</strong> Ambient built; live NetSuite inspection verified</span><span><strong>Team:</strong> two independent full-stack prototypes</span><span><strong>Working title:</strong> Ambient Close Assistant</span></div>
 
     <section id="intent">
       <p class="eyebrow">01 / Product &amp; scope</p><h2>A finance assistant that notices the moment to help</h2>
@@ -221,7 +221,8 @@
         <tr><td>Persistence</td><td>SQLite initially</td><td>Workspace definitions, task state, findings, and action records.</td></tr>
         <tr><td>Repository</td><td>pnpm workspaces</td><td>Separate extension/backend packages with shared contracts.</td></tr>
       </tbody></table></div>
-      <p>Use deterministic code for arithmetic and invoice comparison fields. Let Astra interpret documents, reason about discrepancies, and explain the evidence. Exact dependency versions and database adapters will be pinned during scaffolding; this document is not an installation manifest.</p>
+      <p>Use deterministic code for arithmetic and invoice comparison fields. Let Astra interpret documents, reason about discrepancies, and explain the evidence. Dependency versions are pinned by the implementation lockfile; this document is not an installation manifest.</p>
+      <div class="callout"><p><strong>Dependency release-age policy:</strong> all registry package versions must be at least 14 days old, including transitive dependencies. The initial prototype uses pnpm <code>minimumReleaseAge: 20160</code>, no exclusions, disabled install scripts, and an independent publication-date check of every locked version. All 604 initial versions passed.</p></div>
     </section>
 
     <section id="contract">
@@ -252,13 +253,13 @@
     shared/          # Zod schemas and shared types
   docs/              # Implementation documentation
   .env.example       # Names and placeholders, never credentials</code></pre>
-      <p class="small">This is a planned structure. At the time of writing, the repository contains planning documents; the application packages have not been scaffolded. API/model access and local tooling still need a first-run verification.</p>
+      <p class="small">The initial Ambient prototype implements this package layout on <code>prototype/ambient-local</code> at <code>5979bca</code>. Tests, type checks, build, and API connection passed. A live NetSuite Home inspection completed through the paired extension; bill entry and Gmail remain to be validated.</p>
     </section>
 
     <section id="team">
-      <p class="eyebrow">10 / Team coordination</p><h2>Split implementation at the browser boundary</h2>
-      <div class="grid"><div class="card"><span class="label open">Owner to assign</span><h3>Extension workstream</h3><p>Workspace and tab selection, floating icon, side panel, observers, actual NetSuite screen detection, browser tools, and the WebSocket client. Prove inspection and actions in the demo profile.</p></div><div class="card"><span class="label open">Owner to assign</span><h3>Agent/backend workstream</h3><p>Coordinator, suggestion evaluation, task history, bill investigation, persistence, and the WebSocket server. Develop against recorded or synthetic observations until the live bridge is ready.</p></div></div>
-      <p>Jointly own the schemas and the complete demo. Changes to shared contracts should be agreed before each side implements them. Keep early integration small: one genuine page event, one returned suggestion, then one agent-requested browser action.</p>
+      <p class="eyebrow">10 / Team coordination</p><h2>Build two complete prototypes, then compare</h2>
+      <div class="grid"><div class="card"><span class="label">This workspace</span><h3>Ambient local prototype</h3><p>Build the complete extension, ambient UI, browser tools, agent backend, and local setup on <code>prototype/ambient-local</code>. Evaluate the whole user journey, including reliability and recovery.</p></div><div class="card"><span class="label open">Teammate branch to record</span><h3>Independent teammate prototype</h3><p>The teammate builds their own full-stack interpretation on a separate branch. Keep ownership of the complete experience so both approaches can be compared on the same scenario.</p></div></div>
+      <p>After comparison, choose a foundation and divide focused improvements: NetSuite interaction, Gmail interaction, ambient timing, evidence quality, and latency. Keep the selected product full-stack. Internal contracts may differ during exploration; agree on shared contracts when consolidating.</p>
       <h3>A separate coordination branch and worktree</h3>
       <p>The chosen collaboration direction is a shared <code>coordination</code> branch, checked out in a separate worktree on each computer. Implementation continues in individual feature branches, integrated through small pull requests.</p>
       <pre><code>code/
@@ -271,12 +272,12 @@
         <li>Point each coding agent at the coordination worktree’s file. Do not rely on a stale copy in a feature branch.</li>
         <li>Keep implementation-specific schemas and setup documentation with code. Do not merge the coordination branch into implementation branches.</li>
       </ul>
-      <div class="callout"><p><strong>Planning worktree established:</strong> both planning documents are in the separate <code>openai-sep-26-coord</code> worktree on <code>coordination</code>, prepared for its initial publication. The remote was empty when this branch was created, so the coordination branch has its own initial history. The original implementation worktree remains on unborn <code>main</code>; its initial code commit and application scaffolding are still pending.</p></div>
+      <div class="callout"><p><strong>Separate histories:</strong> the planning documents live in <code>openai-sep-26-coord</code> on the published <code>coordination</code> branch. The original implementation worktree now uses <code>prototype/ambient-local</code>. The repository started empty, so planning and implementation have separate initial histories.</p></div>
     </section>
 
     <section id="delivery">
       <p class="eyebrow">11 / Delivery milestones</p><h2>Prove a complete slice before expanding</h2>
-      <p>The sequence below is a proposed delivery plan. It has no assumed deadline or effort estimate; owners and hackathon time constraints remain to be assigned.</p>
+      <p>The sequence below is a proposed delivery plan for each complete prototype. It has no assumed deadline or effort estimate; the team will choose a foundation after comparing the same scenario.</p>
       <div class="table-wrap"><table><thead><tr><th>Milestone</th><th>Work</th><th>Acceptance evidence</th></tr></thead><tbody>
         <tr><td>1 · Foundation</td><td>Set up branches/worktrees, package layout, first shared schemas, local server, and extension.</td><td>Both developers can run the same setup; extension pairs with its own backend; first Astra request succeeds.</td></tr>
         <tr><td>2 · Ambient presence</td><td>Workspace selection, watched-page icon, page observer, bill-screen event, suggestion response.</td><td>Opening the real NetSuite bill form produces a single contextual suggestion; dismissal is remembered.</td></tr>
@@ -290,7 +291,7 @@
 
     <section id="validation">
       <p class="eyebrow">12 / Validation &amp; unknowns</p><h2>Test the parts the real accounts will decide</h2>
-      <p>The overall architecture is feasible. The main uncertainty is the reliability of browser interaction in the actual applications, followed by the timing and restraint of ambient suggestions. No real-account browser integration has been tested yet.</p>
+      <p>The initial prototype passes 14 tests, type checking, and a production build. Astra completed a read-only inspection of the actual NetSuite Home dashboard through the paired extension. The main uncertainties are bill entry, Gmail and attachment interaction, and ambient suggestion timing. Consult the implementation’s validation record for the precise coverage and remaining checks.</p>
       <div class="table-wrap"><table><thead><tr><th>Question</th><th>First verification</th></tr></thead><tbody>
         <tr><td>Can we recognize the bill screen?</td><td>Inspect the sandbox’s real route, form structure, vendor field, frames, and transitions.</td></tr>
         <tr><td>Can we read the invoice evidence?</td><td>Try the demo Gmail searches and representative attachments; identify browser rendering or download handling required.</td></tr>
@@ -302,7 +303,7 @@
       <h3>Implementation principles</h3>
       <p>Enforce selected-workspace boundaries in code. Treat page and email content as evidence, not instructions that can expand the task. Keep source references and use deterministic calculations. Keep bill submission as a deliberate user review step. Verify effects in the application rather than trusting a model’s claim that an action succeeded.</p>
       <h3>Outstanding decisions</h3>
-      <p>Assign the two implementation owners; inspect the actual tabs; confirm the optional Sheet and demo invoice set; define a default search period and scope; select package versions; establish API access; and settle workspace restoration and history retention behavior. These can be resolved during the first milestones without redesigning the stack.</p>
+      <p>Record the teammate’s prototype branch; validate the actual bill and Gmail pages; confirm the optional Sheet and demo invoice set; define a default search period; and compare prototype behavior. Package versions, API access, and initial workspace/history behavior are established in Ambient and can evolve after the comparison.</p>
     </section>
 
     <section id="references">
