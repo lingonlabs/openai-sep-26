@@ -5,7 +5,7 @@ Verified on 2026-09-10 with Node 25.6.1 and pnpm 10.30.2.
 | Check | Result |
 | --- | --- |
 | Dependency publication dates | All 699 locked registry versions passed the 14-day minimum-age check, including Markdown, transitive and optional packages. |
-| Automated tests | 27 tests passed, including control-level freshness, return visits after acceptance/dismissal, retained browser errors, Markdown rendering, and unsafe-content handling. |
+| Automated tests | 29 tests passed, including control-level freshness, return visits after acceptance/dismissal, retained browser errors, inline popup choices, Markdown rendering, and unsafe-content handling. |
 | Type checking | Shared contracts, server, and extension passed. |
 | Production build | WXT Chrome MV3 build passed. |
 | Live Astra connection | Successful API response using the configured model. |
@@ -96,3 +96,19 @@ explicit dismissal. All 27 tests, type checks, and the production build pass.
 A real Astra test with synthetic data offered help on a reopened bill despite a
 stale pending-offer summary, and the declined follow-up still stayed quiet. The
 local backend was restarted; no extension reload is required for this repair.
+
+## Inline floating choices (2026-09-10)
+
+The floating popup now renders the shared action card with choices, Something else,
+Continue, and Not now. It shows progress and Stop during execution and displays
+action errors. React preserves drafts/focus across background presence updates.
+Opening the assistant uses the global panel's window context in the original click
+handler; Chrome failures are surfaced with an explicit assistant-tab fallback.
+
+All 29 tests, type checks, and the production build pass. The actual popup component
+was exercised in an isolated shadow root on the synthetic localhost preview:
+custom text survived several background updates, Continue submitted that text,
+a selected alternative submitted its prompt, working progress replaced the offer,
+and a simulated panel failure exposed the working fallback action. No real account
+actions were performed for these UI checks. Native Chrome panel opening requires
+validation after the user reloads the extension. No dependencies changed.

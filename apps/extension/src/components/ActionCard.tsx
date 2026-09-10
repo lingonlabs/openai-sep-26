@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import type { Suggestion } from '@ambient/shared';
 import { Button } from './Button';
 

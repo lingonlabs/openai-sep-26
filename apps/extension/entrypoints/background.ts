@@ -46,7 +46,7 @@ export default defineBackground(() => {
       const member = workspace?.tabs.find(t => t.id === tab.id);
       const active = !!member && withinScope(tab.url, member.scope);
       void chrome.tabs.sendMessage(tab.id, { type: 'presence', active, scope: member?.scope, paused: !!workspace?.paused || !!member?.paused,
-        working: !!state.server.runningTaskId, taskId: state.server.runningTaskId, progress: runningTask ? taskProgress(runningTask) : '',
+        working: !!state.server.runningTaskId, taskId: state.server.runningTaskId, progress: runningTask ? taskProgress(runningTask) : '', error: state.error,
         ambientEnabled: state.connection === 'connected' && (state.server.ambient?.preferences.enabled ?? false) && (state.server.ambient?.preferences.instructions.some(i => i.enabled) ?? false), ambientEpoch: state.server.ambient?.epoch ?? 0, baseline,
         suggestion: state.server.suggestions.find(s => s.tabId === tab.id && s.workspaceId === workspace?.id) ?? null, top, reset,
       }, { frameId: 0 }).catch(() => {});
@@ -158,10 +158,11 @@ export default defineBackground(() => {
     if (message.type === 'state:changed') return;
     const fromPanel = !sender.tab && sender.url?.startsWith(chrome.runtime.getURL(''));
     // Opening the side panel must happen in direct response to the user's click.
-    if (message.type === 'panel:open' && sender.tab?.id) { void chrome.sidePanel.open({ tabId: sender.tab.id }).then(() => respond({ ok: true }), error => respond({ ok: false, error: String(error) })); return true; }
-    // Preserve the click's user gesture so accepting the floating suggestion also
-    // opens the panel where the live activity is visible.
-    if (message.type === 'ui:accept' && sender.tab?.id) void chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => {});
+    // The manifest declares a global panel, so open it in the clicked page's window.
+    // Call before waiting for storage; Chrome requires the original user gesture.
+    if (message.type === 'panel:open' && sender.tab?.windowId !== undefined) {
+      void chrome.sidePanel.open({ windowId: sender.tab.windowId }).then(() => respond({ ok: true }), error => respond({ ok: false, error: `Chrome could not open the side panel: ${String(error)}. Use the toolbar icon or open the assistant in a tab below.` })); return true;
+    }
     void ready.then(async () => {
       if (message.type === 'page:ready') { await broadcast(true); return { ok: true }; }
       if (message.type === 'page:context' && sender.tab?.id) {
@@ -176,6 +177,7 @@ export default defineBackground(() => {
       const active = state.workspaces.find(w => w.id === state.activeWorkspaceId);
       const pageMember = sender.tab?.id && active?.tabs.find(t => t.id === sender.tab!.id && withinScope(sender.url ?? '', t.scope));
       if (!fromPanel && !pageMember) throw new Error('This page is not selected in the workspace.');
+      if (message.type === 'panel:tab') { await chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html') }); return { ok: true }; }
       if (message.type === 'ui:save' && fromPanel) {
         const name = String(message.name).trim().slice(0, 80); if (!name) throw new Error('Give the workspace a name.');
         const tabs = state.tabs.filter(t => (message.tabIds as number[]).includes(t.id)).map(t => ({ id: t.id, title: t.title, scope: scopeFor(t.url)!, paused: false }));
@@ -191,12 +193,19 @@ export default defineBackground(() => {
       else if (message.type === 'tab:remove' && active) { active.tabs = active.tabs.filter(t => t.id !== (fromPanel ? message.tabId : sender.tab?.id)); await persist(); }
       else if (message.type === 'presence:position') { top = String(message.top); await chrome.storage.local.set({ presenceTop: top }); }
       else if (message.type === 'ui:stop') { if (state.server.runningTaskId) cancelled.add(state.server.runningTaskId); send({ type: 'stop' }); }
-      else if (message.type === 'ui:dismiss') { send({ type: 'dismiss', id: message.id }); }
+      else if (message.type === 'ui:dismiss') {
+        if (state.connection !== 'connected') throw new Error('Connect to the local server first.');
+        const suggestion = state.server.suggestions.find(s => s.id === message.id && s.workspaceId === active?.id && (fromPanel || s.tabId === sender.tab?.id));
+        if (!suggestion) throw new Error('Suggestion expired.');
+        send({ type: 'dismiss', id: suggestion.id }); return { ok: true, started: false };
+      }
       else if ((message.type === 'ui:ambient-settings' || message.type === 'ui:ambient-forget') && fromPanel) {
         send({ type: message.type === 'ui:ambient-settings' ? 'ambient:settings' : 'ambient:forget', workspaceId: state.activeWorkspaceId, preferences: message.preferences });
       }
       else if (message.type === 'ui:accept') {
-        const s = state.server.suggestions.find(s => s.id === message.id); if (!s) throw new Error('Suggestion expired.');
+        if (state.connection !== 'connected') throw new Error('Connect to the local server first.');
+        if (state.server.runningTaskId) throw new Error('A task is already running.');
+        const s = state.server.suggestions.find(s => s.id === message.id && s.workspaceId === active?.id && (fromPanel || s.tabId === sender.tab?.id)); if (!s) throw new Error('Suggestion expired.');
         if (!message.text?.trim() && s.options?.[Number(message.option)]?.kind === 'dismiss') { send({ type: 'dismiss', id: s.id }); return { ok: true, started: false }; }
         const chosen = typeof message.text === 'string' && message.text.trim() ? message.text.trim() : s.options?.[Number(message.option)]?.prompt;
         if (!chosen) throw new Error('Choose an option or write what you would like help with.');

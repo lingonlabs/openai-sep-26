@@ -5,6 +5,7 @@ import { Button } from './components/Button';
 import { Markdown } from './components/Markdown';
 import { ActionCard } from './components/ActionCard';
 import { HelpPanel } from './components/HelpPanel';
+import { PresencePreview } from './components/PresencePreview';
 
 const isExtension = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
 const preview: ExtensionState = { ...structuredClone(emptyState), connection: 'connected', activeWorkspaceId: 'preview',
@@ -32,6 +33,11 @@ function provider(tab: { url?: string; scope?: string; title: string }) {
 }
 
 export function App() {
+  if (!isExtension && typeof location !== 'undefined' && new URLSearchParams(location.search).get('view') === 'popup') return <PresencePreview initial={preview.server.suggestions[0]}/>;
+  return <AssistantApp/>;
+}
+
+function AssistantApp() {
   const [state, setState] = useState<ExtensionState>(isExtension ? structuredClone(emptyState) : preview);
   const [error, setError] = useState(''); const [token, setToken] = useState(''); const [pairing, setPairing] = useState(false);
   const [editing, setEditing] = useState<Workspace | 'new' | null>(null); const [draftName, setDraftName] = useState('September close');

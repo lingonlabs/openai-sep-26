@@ -1,4 +1,7 @@
 import { detectBillForm, isCommitControl, canReplaceValue, withinScope, type BrowserAction, type BrowserObservation, type Suggestion } from '@ambient/shared';
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { Presence, presenceStyles } from '../src/components/Presence';
 import { assertFreshTarget, targetFingerprint, isSearchField } from '../src/browser-target';
 
 export default defineContentScript({
@@ -14,7 +17,7 @@ export default defineContentScript({
     let refs = new Map<string, { element: HTMLElement; fingerprint: string }>();
     let inspectionVersion = '', inspectedUrl = '', progress = '';
     let ambientEnabled = false, ambientEpoch = 0, baselineNeeded = false, visitId = 'initial';
-    let lastObservedUrl = location.href, lastKind = '';
+    let lastObservedUrl = location.href, lastKind = '', popupError = '';
     let monitoring = false, poll: ReturnType<typeof setInterval> | undefined;
     const host = document.createElement('div'); host.id = 'ambient-close-presence';
     const shadow = host.attachShadow({ mode: 'closed' });
@@ -22,45 +25,17 @@ export default defineContentScript({
     const visible = (e: HTMLElement) => !!(e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden');
     const label = (e: HTMLElement) => (e.getAttribute('aria-label') || (e as HTMLInputElement).labels?.[0]?.innerText || e.getAttribute('placeholder') || e.getAttribute('title') || e.innerText || (e as HTMLInputElement).value || '').trim().slice(0, 220);
     const own = (e: Node | null) => e === host || !!(e && host.contains(e));
-    const style = document.createElement('style');
-    style.textContent = `:host{all:initial;position:fixed;right:0;top:58%;z-index:2147483647;font:13px/1.45 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#20302c}*{box-sizing:border-box}button{font:inherit;cursor:pointer}button:focus-visible{outline:3px solid #edc65e;outline-offset:3px}.orb{border:1px solid #ffffff65;border-right:0;background:#1c4739;color:white;border-radius:15px 0 0 15px;width:43px;height:49px;box-shadow:0 4px 20px #12352725;font-size:22px;position:relative}.orb.paused{background:#6d7773}.dot{position:absolute;right:7px;top:7px;width:6px;height:6px;background:#d7eeba;border-radius:50%}.bubble{position:absolute;right:54px;top:0;width:282px;background:#fffdf8;border:1px solid #dce3d8;border-radius:15px;padding:18px;box-shadow:0 12px 44px #112b3024}.eyebrow{font-size:10px;letter-spacing:.12em;color:#5c7468;text-transform:uppercase;margin-bottom:9px}.title{font-size:15px;font-weight:650;margin:0 0 8px}.detail{font-size:12px;color:#65736b;margin:0 0 16px}.primary{background:#244e3e;color:white;border:0;border-radius:7px;padding:9px 12px}.plain{background:transparent;border:0;color:#68756e;padding:8px}.menu{display:flex;flex-wrap:wrap;gap:5px;border-top:1px solid #e4e7df;margin-top:12px;padding-top:10px}.stop{background:#9b4137;color:white;border:0;border-radius:7px;padding:9px 12px}`;
-    shadow.append(style);
+    const style = document.createElement('style'); style.textContent = presenceStyles; shadow.append(style);
     const container = document.createElement('div'); shadow.append(container);
-    let expanded = false;
-    function send(message: unknown) { return chrome.runtime.sendMessage(message).catch(() => { active = false; host.remove(); }); }
-    function button(text: string, className: string, action: () => void) {
-      const b = document.createElement('button'); b.textContent = text; b.className = className; b.onclick = action; return b;
-    }
+    const root = createRoot(container);
+    function send(message: unknown) { return chrome.runtime.sendMessage(message); }
     function render() {
-      container.replaceChildren(); if (!active) { host.remove(); return; }
+      if (!active) { host.remove(); return; }
       if (!host.isConnected) document.documentElement.append(host);
-      const orb = button('✦', 'orb' + (paused ? ' paused' : ''), () => { expanded = !expanded; render(); });
-      orb.setAttribute('aria-label', working ? 'Ambient is working. Open controls' : paused ? 'Ambient paused. Open controls' : 'Ambient is watching. Open controls');
-      const dot = document.createElement('span'); dot.className = 'dot'; orb.append(dot); container.append(orb);
-      // Vertical repositioning without changing the page underneath.
-      orb.onpointerdown = e => {
-        const start = e.clientY, original = host.getBoundingClientRect().top; let moved = false;
-        orb.setPointerCapture(e.pointerId);
-        orb.onpointermove = event => { if (Math.abs(event.clientY - start) > 5) moved = true; if (moved) host.style.top = Math.max(12, Math.min(innerHeight - 65, original + event.clientY - start)) + 'px'; };
-        orb.onpointerup = () => { orb.onpointermove = null; if (moved) { orb.onclick = e => e.preventDefault(); void send({ type: 'presence:position', top: host.style.top }); } };
-      };
-      if ((suggestion && !paused) || expanded || working) {
-        const bubble = document.createElement('div'); bubble.className = 'bubble';
-        const eyebrow = document.createElement('div'); eyebrow.className = 'eyebrow'; eyebrow.textContent = working ? 'Ambient · working' : paused ? 'Ambient · paused' : 'Ambient · close companion';
-        const title = document.createElement('p'); title.className = 'title'; title.textContent = working ? 'Checking your workspace' : suggestion?.title ?? (paused ? 'Monitoring is paused' : 'Here when you need a hand');
-        const detail = document.createElement('p'); detail.className = 'detail'; detail.textContent = working ? progress || 'Starting the investigation…' : suggestion?.detail ?? 'Only the tabs you selected belong to this workspace.';
-        bubble.append(eyebrow, title, detail);
-        if (working) bubble.append(button('Stop task', 'stop', () => { void send({ type: 'ui:stop' }); }));
-        else if (suggestion && !paused) {
-          bubble.append(button('Choose how to help ↗', 'primary', () => { void send({ type: 'panel:open' }); }), button('Dismiss', 'plain', () => { void send({ type: 'ui:dismiss', id: suggestion!.id }); suggestion = null; expanded = false; render(); }));
-        }
-        bubble.append(button('Open assistant ↗', 'plain', () => { void send({ type: 'panel:open' }); }));
-        if (expanded) {
-          const menu = document.createElement('div'); menu.className = 'menu';
-          menu.append(button(paused ? 'Resume tab' : 'Pause tab', 'plain', () => { void send({ type: 'tab:pause', paused: !paused }); }), button('Pause workspace', 'plain', () => { void send({ type: 'workspace:pause', paused: true }); }), button('Remove tab', 'plain', () => { void send({ type: 'tab:remove' }); })); bubble.append(menu);
-        }
-        container.append(bubble);
-      }
+      host.style.setProperty('--ambient-top', host.style.top || '58vh');
+      root.render(createElement(Presence, { paused, working, monitoring: ambientEnabled, suggestion, progress, error: popupError,
+        send, onPosition: (top: number) => { host.style.top = top + 'px'; host.style.setProperty('--ambient-top', top + 'px'); },
+      }));
     }
     function inspect(): BrowserObservation {
       refs = new Map();
@@ -127,7 +102,7 @@ export default defineContentScript({
       const context = { tabId: 0, url: location.href, title: document.title, version: version(), visitId, kind, vendor, text, baseline: baselineNeeded, ambientEpoch, observedAt: Date.now() };
       const fingerprint = JSON.stringify([location.href, visitId, kind, vendor, text]);
       if (fingerprint === lastContext) return; lastContext = fingerprint;
-      baselineNeeded = false; await send({ type: 'page:context', context });
+      baselineNeeded = false; await send({ type: 'page:context', context }).catch(() => { active = false; host.remove(); });
     }
     let debounce: ReturnType<typeof setTimeout>;
     const onInput = (e: Event) => { if (!own(e.target as Node)) { revision++; clearTimeout(debounce); debounce = setTimeout(() => { void observe(); }, 1200); } };
@@ -156,7 +131,7 @@ export default defineContentScript({
         if (message.working || message.baseline) baselineNeeded = true;
         if (message.ambientEpoch !== ambientEpoch) lastContext = '';
         ambientEpoch = message.ambientEpoch ?? 0; ambientEnabled = !!message.ambientEnabled;
-        active = message.active; paused = message.paused; working = message.working; taskId = message.taskId; suggestion = message.suggestion; scope = message.scope ?? ''; progress = message.progress ?? '';
+        active = message.active; paused = message.paused; working = message.working; taskId = message.taskId; suggestion = message.suggestion; scope = message.scope ?? ''; progress = message.progress ?? ''; popupError = message.error ?? '';
         if (message.top) host.style.top = message.top;
         if (message.reset) lastContext = '';
         render(); setMonitoring(); void observe(); respond({ ok: true });
@@ -164,6 +139,6 @@ export default defineContentScript({
         void execute(message.action).then(data => respond({ ok: true, data }), error => respond({ ok: false, error: String(error.message ?? error) })); return true;
       }
     });
-    void send({ type: 'page:ready' });
+    void send({ type: 'page:ready' }).catch(() => { active = false; host.remove(); });
   },
 });

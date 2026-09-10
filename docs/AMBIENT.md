@@ -14,7 +14,15 @@ An ambient decision is either quiet, an offer, or a question. Offers/questions
 include 2–3 choices and a free-text alternative. They show why they appeared.
 Selecting a task choice starts the existing execution workflow; selecting a dismiss
 choice or Not now records that response without starting work. No choice is
-submitted automatically. The floating presence leads to the panel's choices.
+submitted automatically. The floating popup shows the choices and free-text field
+directly, using the same action card as the side panel. Continue starts the selected
+work without requiring the side panel to open; progress, Stop, and errors appear
+in the popup. Background presence updates preserve the current draft and focus.
+
+Open assistant targets the global side panel in the clicked page's Chrome window.
+If Chrome rejects that request, the popup displays the error and an explicit
+Open assistant in a tab fallback. The synthetic popup preview is available at
+`http://127.0.0.1:4318/preview?view=popup`.
 
 The UI exposes the last evaluation, current state, remembered summary, visit
 counts, and recent decisions. Clearing remembered context preserves instructions.
