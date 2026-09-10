@@ -55,10 +55,11 @@ export const defaultAmbientPreferences = (): AmbientPreferences => ({ enabled: t
 export type Suggestion = { id: string; workspaceId: string; tabId: number; version: string; title: string; detail: string; vendor: string; key: string; createdAt: number;
   options?: ActionOption[]; sourceUrl?: string; visitId?: string; instructionId?: string; reason?: string };
 export type Task = {
-  id: string; workspaceId: string; title: string; status: 'running' | 'completed' | 'stopped' | 'failed';
-  createdAt: number; updatedAt: number; messages: { role: 'user' | 'assistant'; text: string }[];
+  id: string; workspaceId: string; title: string; status: 'running' | 'completed' | 'blocked' | 'stopped' | 'failed';
+  createdAt: number; updatedAt: number; messages: { id?: string; role: 'user' | 'assistant'; text: string; findingIds?: string[]; interim?: boolean }[];
   activity: { id: string; text: string; at: number; status: 'working' | 'done' | 'error'; detail?: string; error?: string }[];
   findings: Finding[]; error?: string; readOnly?: boolean;
+  phase?: 'investigating' | 'reviewing'; progress?: string;
 };
 export type ServerState = { apiReady: boolean; model: string; tasks: Task[]; suggestions: Suggestion[]; runningTaskId: string | null; ambient?: AmbientStatus };
 export type ExtensionState = {
@@ -71,10 +72,23 @@ export const emptyState: ExtensionState = { workspaces: [], activeWorkspaceId: n
 export function taskProgress(task: Task): string {
   const latest = task.activity.at(-1);
   if (task.status !== 'running') return task.status === 'completed' ? 'Investigation finished' : task.error || 'Investigation stopped';
+  if (task.progress) return task.progress;
   if (!latest) return 'Starting the investigation…';
   if (latest.status === 'working') return latest.text;
   if (latest.status === 'error') return 'Reviewing a browser error and deciding how to continue…';
   return `Considering the next step after: ${latest.text}`;
+}
+
+export function findingsForMessage(task: Task, index: number): { findings: Finding[]; legacy: boolean } {
+  const message = task.messages[index];
+  if (message?.role !== 'assistant') return { findings: [], legacy: false };
+  const ids = new Set(message.findingIds ?? []);
+  const linked = task.findings.filter(finding => ids.has(finding.id));
+  const lastAssistant = task.messages.map(m => m.role).lastIndexOf('assistant');
+  if (index !== lastAssistant) return { findings: linked, legacy: false };
+  const claimed = new Set(task.messages.flatMap(m => m.findingIds ?? []));
+  const older = task.findings.filter(finding => !claimed.has(finding.id));
+  return { findings: [...linked, ...older], legacy: older.length > 0 };
 }
 
 export const ClientMessageSchema = z.discriminatedUnion('type', [

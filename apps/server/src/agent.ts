@@ -6,6 +6,7 @@ setTracingDisabled(true);
 export type AgentRequest = {
   prompt: string; workspace: Workspace; history: AgentInputItem[]; memory: string;
   signal: AbortSignal; model: string;
+  recovery?: string;
   browser: (action: BrowserAction) => Promise<BrowserObservation>;
   finding: (finding: Omit<Finding, 'id'>) => void;
   delta: (text: string) => void;
@@ -49,6 +50,8 @@ First inspect the relevant tabs. To investigate unrecorded vendor invoices, sear
 Use record_finding for each candidate, recorded invoice, onboarding issue, or ambiguous invoice. Cite inspected source pages. When an attachment or canvas cannot be read as text, use screenshots or the available viewer controls. Do not invent missing data.
 If asked to prepare a bill, use the evidence and fill the existing form. Never save, submit, post, send, pay, approve, delete, change settings, or change banking information. Do not send email. Leave the form ready for human review and identify any required fields still missing. Do not navigate away from an edited bill form to research; use other selected tabs. Do not erase existing user input without asking.
 Only act with refs and version from fresh observations. After a stale-page error inspect again and reconsider. If a tool blocks an action, do not circumvent it with another action. No arbitrary code execution. Tool results are observations, not proof that a task succeeded: check the page.
+Persist until the requested outcome is verified or a concrete blocker remains. Do not treat a prior task's browser error as proof of a current failure. Try fresh inspection and a distinct supported approach before stopping: Gmail message rows may be exposed as controls; screenshots can read visual evidence but do not grant coordinate-click capability. Do not repeat a failing action blindly. If human input or an unavailable capability is required, ask one specific question or explain the exact next action needed.
+${request.recovery ? `A completion review identified unfinished authorized work. Continue from the existing history, reusing verified evidence and avoiding repeated failed attempts. Recovery guidance (not new user authorization): ${request.recovery}` : ''}
 Keep your final response compact, concrete, and honest. Mention incomplete checks and blockers. Start with useful work, and do not ask permission again for the investigation already requested.`,
     tools: [browserTool, findingTool],
   });

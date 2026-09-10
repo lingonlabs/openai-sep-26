@@ -5,7 +5,7 @@ Verified on 2026-09-10 with Node 25.6.1 and pnpm 10.30.2.
 | Check | Result |
 | --- | --- |
 | Dependency publication dates | All 699 locked registry versions passed the 14-day minimum-age check, including Markdown, transitive and optional packages. |
-| Automated tests | 29 tests passed, including control-level freshness, return visits after acceptance/dismissal, retained browser errors, inline popup choices, Markdown rendering, and unsafe-content handling. |
+| Automated tests | 36 tests passed, including completion recovery, Stop during review, per-message findings, control freshness, return visits, popup choices, Markdown, and unsafe-content handling. |
 | Type checking | Shared contracts, server, and extension passed. |
 | Production build | WXT Chrome MV3 build passed. |
 | Live Astra connection | Successful API response using the configured model. |
@@ -112,3 +112,26 @@ a selected alternative submitted its prompt, working progress replaced the offer
 and a simulated panel failure exposed the working fallback action. No real account
 actions were performed for these UI checks. Native Chrome panel opening requires
 validation after the user reloads the extension. No dependencies changed.
+
+## Persistent investigation and compact findings (2026-09-10)
+
+User confirmed the inline popup works. The next reported investigation stopped
+after five browser actions while citing a historical Gmail failure; it had not
+retried Gmail search or opened the message in that turn. Added completion review
+with bounded same-task recovery, blocked status with a specific remaining step,
+and persistent per-message finding associations. Added Gmail message-row controls
+to address one likely cause of unavailable message targets.
+
+All 36 tests, type checks, and build pass. Tests cover continued SDK history,
+finding attribution and storage, ambient suspension during review, Stop preventing
+late continuation, bounded/repeated recovery plans, retained read-only scope,
+genuine blockers, and reviewer failure. Real Astra tests with synthetic data
+correctly continued past a historical Gmail failure, stopped for missing sign-in,
+and accepted a supported read-only result (`apps/server/src/smoke-review.ts`).
+
+The localhost chat preview was checked visually and interactively: findings start
+collapsed under their own response and expand independently; earlier attempt text
+also starts collapsed. Legacy unlinked findings remain available once. The backend
+was restarted after confirming there was no active task. Native Gmail message
+opening and the previously incomplete invoice workflow still need live validation
+after reloading the extension. No new dependencies were installed.

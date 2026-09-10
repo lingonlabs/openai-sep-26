@@ -5,6 +5,7 @@ import type { Store } from './store.js';
 import type { AgentDriver } from './agent.js';
 import { Ambient } from './ambient.js';
 import { driveAmbient, type AmbientDriver } from './ambient-agent.js';
+import { CompletionReviewSchema, reviewCompletion, type CompletionReviewer, type CompletionReview } from './completion-review.js';
 
 type Pending = { resolve: (value: BrowserObservation) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
 export class Hub {
@@ -16,7 +17,7 @@ export class Hub {
   private pending = new Map<string, Pending>();
   send: (message: ServerMessage) => void = () => {};
   connected = false;
-  constructor(readonly store: Store, readonly driver: AgentDriver, readonly model: string, readonly apiReady: boolean, ambientDriver: AmbientDriver = driveAmbient) {
+  constructor(readonly store: Store, readonly driver: AgentDriver, readonly model: string, readonly apiReady: boolean, ambientDriver: AmbientDriver = driveAmbient, private reviewer: CompletionReviewer = reviewCompletion) {
     this.tasks = store.tasks().map(task => task.status === 'running' ? { ...task, status: 'stopped', error: 'Backend restarted. Review the browser before continuing.' } : task);
     this.ambient = new Ambient(store, ambientDriver, model, apiReady, () => this.publish(), suggestion => { this.suggestions = [suggestion]; this.publish(); }, () => this.suggestions);
   }
@@ -97,7 +98,7 @@ export class Hub {
     const target = this.observations.get(action.tabId)?.elements.find(e => e.ref === action.ref)?.label;
     const verbs = { inspect: 'Read', screenshot: 'View screenshot of', click: 'Click', fill: 'Fill', press: 'Press', scroll: 'Scroll', navigate: 'Open page in' };
     const activity: Task['activity'][number] = { id, text: `${verbs[action.action]} ${action.action === 'press' ? action.text + ' in ' : ''}${target ? target + ' · ' : ''}${appName}`, detail: action.action === 'fill' ? action.text ?? undefined : action.action === 'navigate' ? action.url ?? undefined : undefined, at: Date.now(), status: 'working' };
-    task.activity.push(activity); this.publish();
+    task.progress = undefined; task.activity.push(activity); this.publish();
     try {
       const observation = await new Promise<BrowserObservation>((resolve, reject) => {
         const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('Browser command timed out. Inspect the page before retrying.')); }, 25000);
@@ -126,31 +127,75 @@ export class Hub {
       this.tasks.unshift(task);
     }
     const controller = new AbortController(); this.running = { task, controller };
-    this.store.set('running-scope', workspace); task.status = 'running'; task.error = undefined; task.readOnly = message.readOnly ?? false;
-    task.messages.push({ role: 'user', text: message.prompt });
+    this.store.set('running-scope', workspace); task.status = 'running'; task.error = undefined; task.readOnly = message.readOnly ?? task.readOnly ?? false;
+    task.phase = 'investigating'; task.progress = undefined;
+    task.messages.push({ id: randomUUID(), role: 'user', text: message.prompt });
     this.suggestions = this.suggestions.filter(s => s.workspaceId !== workspace.id);
-    const assistantMessage = { role: 'assistant' as const, text: '' }; task.messages.push(assistantMessage);
+    const addResponse = (): Task['messages'][number] => {
+      const response: Task['messages'][number] = { id: randomUUID(), role: 'assistant', text: '', findingIds: [] };
+      task!.messages.push(response); return response;
+    };
+    let assistantMessage = addResponse();
+    const activityStart = task.activity.length, findingStart = task.findings.length;
+    const turnObservations = new Map<number, BrowserObservation>();
+    const reviews: CompletionReview[] = [];
     this.publish();
-    const timeout = setTimeout(() => this.stop('Task reached its 5-minute limit. Review progress before continuing.'), 300000);
+    const timeout = setTimeout(() => this.stop('Task reached its 10-minute limit. Review progress before continuing.'), 600000);
     try {
-      const result = await this.driver({ prompt: message.prompt, workspace, model: this.model, signal: controller.signal,
-        history: this.store.get<AgentInputItem[]>(`history:${task.id}`, []),
-        memory: [this.ambient.status?.summary ?? '', ...this.store.get<string[]>(`memory:${workspace.id}`, []).slice(-8)].join('\n'),
-        browser: action => this.browser(action, task!, controller.signal),
-        finding: finding => { task!.findings.push({ ...finding, id: randomUUID() }); this.publish(); },
-        delta: text => { assistantMessage.text += text; this.send({ type: 'state', state: this.state() }); },
-      });
-      controller.signal.throwIfAborted();
-      assistantMessage.text = result.text; task.status = 'completed';
-      this.store.set(`history:${task.id}`, result.history);
-      this.store.set(`memory:${workspace.id}`, [...this.store.get<string[]>(`memory:${workspace.id}`, []), result.text.slice(0, 4000)].slice(-8));
+      let recovery: string | undefined;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const result = await this.driver({ prompt: recovery ? 'Continue the existing authorized request using the completion-review guidance. Reinspect before interacting.' : message.prompt,
+          recovery, workspace, model: this.model, signal: controller.signal,
+          history: this.store.get<AgentInputItem[]>(`history:${task.id}`, []),
+          memory: [this.ambient.status?.summary ?? '', ...this.store.get<string[]>(`memory:${workspace.id}`, []).slice(-8)].join('\n'),
+          browser: async action => { const observation = await this.browser(action, task!, controller.signal); turnObservations.set(action.tabId, observation); return observation; },
+          finding: finding => {
+            controller.signal.throwIfAborted();
+            const saved = { ...finding, id: randomUUID() }; task!.findings.push(saved); assistantMessage.findingIds!.push(saved.id); this.publish();
+          },
+          delta: text => { if (!controller.signal.aborted) { assistantMessage.text += text; this.send({ type: 'state', state: this.state() }); } },
+        });
+        controller.signal.throwIfAborted(); assistantMessage.text = result.text;
+        this.store.set(`history:${task.id}`, result.history);
+        task.phase = 'reviewing'; task.progress = 'Checking whether your request is fully handled…'; this.publish();
+        let review: CompletionReview;
+        try {
+          review = CompletionReviewSchema.parse(await this.reviewer({ model: this.model,
+            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]), workspace, goal: message.prompt,
+            readOnly: !!task.readOnly, response: result.text, messages: task.messages,
+            activity: task.activity.slice(activityStart), findings: task.findings.slice(findingStart),
+            observations: [...turnObservations.values()], previousReviews: reviews,
+          }));
+        } catch (error) {
+          controller.signal.throwIfAborted();
+          task.status = 'blocked'; task.error = `Completion review failed: ${error instanceof Error ? error.message : 'Unknown error'}. The request has not been verified as complete.`; break;
+        }
+        controller.signal.throwIfAborted();
+        const repeated = reviews.some(previous => previous.nextStep.trim().toLowerCase() === review.nextStep.trim().toLowerCase());
+        reviews.push(review);
+        this.ambient.record('review', `${review.decision}: ${review.reason}`, workspace.id);
+        if (review.decision === 'complete') { task.status = 'completed'; break; }
+        if (review.decision === 'continue' && review.nextStep.trim() && !repeated && attempt < 2) {
+          assistantMessage.interim = true;
+          recovery = `${review.reason}\nNext approach: ${review.nextStep}`;
+          task.phase = 'investigating'; task.progress = `Trying another approach: ${review.nextStep}`;
+          assistantMessage = addResponse(); this.publish(); continue;
+        }
+        task.status = 'blocked';
+        task.error = review.decision === 'continue' ? `Automatic recovery stopped after ${attempt + 1} attempts. ${review.reason}` : review.reason;
+        if (review.nextStep.trim()) assistantMessage.text += `\n\n**${review.decision === 'blocked' ? 'Next step needed' : 'Remaining step'}:** ${review.nextStep}`;
+        break;
+      }
+      this.store.set(`memory:${workspace.id}`, [...this.store.get<string[]>(`memory:${workspace.id}`, []), `${task.status}: ${assistantMessage.text.slice(0, 3500)} ${task.error ?? ''}`.slice(0,4000)].slice(-8));
+      if (task.status === 'blocked') this.store.set(`history:${task.id}`, [...this.store.get<AgentInputItem[]>(`history:${task.id}`, []),
+        { role: 'assistant', content: `Completion check: ${task.error ?? ''}\n${reviews.at(-1)?.nextStep ?? ''}` }]);
     } catch (error) {
       task.status = controller.signal.aborted ? 'stopped' : 'failed';
       task.error = controller.signal.aborted ? task.error : error instanceof Error ? error.message : 'Investigation failed.';
       // An interrupted run may have changed the page. Continuation starts with a fresh inspection.
-      if (!assistantMessage.text) task.messages.pop();
+      if (!assistantMessage.text && !assistantMessage.findingIds?.length) task.messages.pop();
     } finally {
-      clearTimeout(timeout); task.updatedAt = Date.now();
+      clearTimeout(timeout); task.updatedAt = Date.now(); task.phase = undefined; task.progress = undefined;
       this.ambient.record('task', `${task.status}: ${task.title}. ${task.error || assistantMessage.text.slice(0,1000)}`, workspace.id);
       this.running = null; this.publish();
     }

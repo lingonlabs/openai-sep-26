@@ -65,6 +65,31 @@ Those changes cannot produce ambient offers or increment user-visit counts.
 The task's outcome is instead recorded explicitly in the originating workspace's
 memory, including when the user has switched workspaces meanwhile.
 
+## Completion and continued investigation
+
+After the investigator proposes a final answer, a tool-free Astra completion
+reviewer compares it with the user's request, conversation, actions, findings,
+and bounded current observations. It can accept completion, request a concrete
+untried recovery step, or identify a blocker requiring user help. A truthful
+partial answer alone does not establish completion of the requested work.
+
+Recovery continues the same task using persisted SDK history, with up to two
+additional investigator passes. There is a 10-minute limit for the whole requested
+turn, 32 SDK turns per investigator pass, and a 45-second limit for each review.
+Repeated identical recovery plans stop. The UI shows when completion is being
+checked and when another approach is being tried. Incomplete work is marked
+`blocked` with the remaining step; review failure cannot silently mark work complete.
+Stop, scope changes, and disconnect cancel review and continuation too. Ambient
+inspection remains suspended across the entire sequence. Review never grants new
+browser capabilities or expands the user's authorization.
+
+Each assistant response stores its finding IDs. Its Findings section is collapsed
+by default, and earlier attempts that led to recovery are also collapsed. Existing
+unlinked findings remain available once, labelled as including earlier task evidence.
+User follow-ups continue the same saved conversation and preserve read-only scope.
+Gmail conversation rows are now included in inspected controls so message opening
+can be attempted through ordinary inspected refs rather than fabricated links.
+
 ## Persistence and limits
 
 SQLite keys are scoped by workspace. Memory contains:

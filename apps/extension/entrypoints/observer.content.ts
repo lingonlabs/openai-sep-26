@@ -40,7 +40,10 @@ export default defineContentScript({
     function inspect(): BrowserObservation {
       refs = new Map();
       const elements: BrowserObservation['elements'] = [];
-      for (const e of document.querySelectorAll<HTMLElement>('a[href],button,input,textarea,select,[role="button"],[role="textbox"],[contenteditable="true"],[role="tab"],[role="option"]')) {
+      const controls = 'a[href],button,input,textarea,select,[role="button"],[role="link"],[role="textbox"],[contenteditable="true"],[role="tab"],[role="option"]';
+      // Gmail opens conversations from table rows, not ordinary anchor/button elements.
+      const messageRows = location.hostname === 'mail.google.com' ? ',tr.zA,[role="main"] [role="row"]' : '';
+      for (const e of document.querySelectorAll<HTMLElement>(controls + messageRows)) {
         if (!visible(e) || own(e) || (e as HTMLInputElement).type === 'password' || (e as HTMLInputElement).type === 'hidden') continue;
         const ref = `e${elements.length + 1}`; const text = label(e); refs.set(ref, { element: e, fingerprint: targetFingerprint(e, text) });
         elements.push({ ref, tag: e.tagName.toLowerCase(), role: isSearchField(e, text, location.hostname) ? 'searchbox' : e.getAttribute('role') || '', label: text, value: 'value' in e ? String(e.value).slice(0, 500) : undefined, inputType: e.getAttribute('type') || undefined });

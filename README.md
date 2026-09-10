@@ -76,12 +76,18 @@ workspace does not control browser tabs and its investigation button is disabled
 - Node/Fastify WebSocket bridge with token pairing and an extension-origin check.
 - Agents SDK with `gpt-6-astra`, browser tools, typed findings, bounded tasks,
   streaming responses, and SQLite persistence.
+- Completion review checks each proposed finish against the request and evidence;
+  up to two distinct recovery passes continue the same history before a concrete
+  blocker is reported. Monitoring stays suspended throughout, with Stop available.
+- Findings are linked to their producing chat response and collapsed by default.
+  Earlier incomplete attempts are retained in collapsed sections.
 - Browser tools: inspect visible page text and controls, click, fill, keyboard
   input for search, scroll, scoped navigation, and debugger screenshots.
 - Successful task histories can continue; workspace memory contains summaries.
   Stop/disconnect cancel queued work. Interrupted runs require fresh inspection;
   this version does not serialize and resume the exact interrupted SDK run state.
-- Accepting a floating suggestion opens Activity. Live progress, elapsed time,
+- Accepting a floating suggestion shows progress inline and switches an open side
+  panel to Activity. Live progress, elapsed time,
   control names, entered text, and retained error details make browser work visible.
   Assistant responses render Markdown, including tables and source links.
 
