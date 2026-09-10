@@ -1,0 +1,13 @@
+{
+  "name": "@ambient/extension", "version": "0.1.0", "private": true, "type": "module",
+  "scripts": { "dev": "wxt --no-open", "build": "wxt build", "typecheck": "wxt prepare && tsc --noEmit" },
+  "dependencies": {
+    "@ambient/shared": "workspace:*", "react": "^19.1.0", "react-dom": "^19.1.0",
+    "lucide-react": "^0.468.0", "clsx": "^2.1.1", "tailwind-merge": "^3.0.0", "class-variance-authority": "^0.7.1"
+  },
+  "devDependencies": {
+    "wxt": "^0.20.0", "@wxt-dev/module-react": "^1.1.0",
+    "@types/react": "^19.1.0", "@types/react-dom": "^19.1.0",
+    "tailwindcss": "^4.1.0", "@tailwindcss/vite": "^4.1.0", "@types/chrome": "^0.1.0"
+  }
+}

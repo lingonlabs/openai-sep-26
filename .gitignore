@@ -1,0 +1,12 @@
+node_modules/
+.pnpm-store/
+.env
+.env.*
+!.env.example
+.local/
+.output/
+.wxt/
+dist/
+*.tsbuildinfo
+.DS_Store
+test-results/

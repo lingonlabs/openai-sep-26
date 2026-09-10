@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - packages/*
+
+# All registry dependencies must be at least 14 days old. No exemptions.
+minimumReleaseAge: 20160
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+blockExoticSubdeps: true
+ignoreScripts: true
+saveExact: true
