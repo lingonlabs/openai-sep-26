@@ -1,0 +1,38 @@
+{
+  "id": "C5",
+  "title": "Same amount, different vendor",
+  "entry": {
+    "id": "C5",
+    "postingDate": "2026-08-31",
+    "postingPeriod": "2026-08",
+    "currency": "USD",
+    "kind": "standard",
+    "vendorId": "OMEGA",
+    "invoiceId": "OMEGA-12",
+    "bankLineId": null,
+    "payrollId": null,
+    "reversalOf": null,
+    "memo": "Omega supplies",
+    "lines": [
+      {
+        "id": "L1",
+        "account": "6800",
+        "debit": "12400.00",
+        "credit": "0.00",
+        "memo": ""
+      },
+      {
+        "id": "L2",
+        "account": "2000",
+        "debit": "0.00",
+        "credit": "12400.00",
+        "memo": ""
+      }
+    ]
+  },
+  "expected": {
+    "decision": "allow",
+    "evidenceIds": [],
+    "changedFields": []
+  }
+}

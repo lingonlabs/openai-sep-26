@@ -1,0 +1,40 @@
+{
+  "id": "C4",
+  "title": "One-cent bank rounding",
+  "entry": {
+    "id": "C4",
+    "postingDate": "2026-08-29",
+    "postingPeriod": "2026-08",
+    "currency": "USD",
+    "kind": "standard",
+    "vendorId": null,
+    "invoiceId": null,
+    "bankLineId": "BANK-AUG-0212",
+    "payrollId": null,
+    "reversalOf": null,
+    "memo": "Bank fee with rounding",
+    "lines": [
+      {
+        "id": "L1",
+        "account": "6200",
+        "debit": "451.99",
+        "credit": "0.00",
+        "memo": ""
+      },
+      {
+        "id": "L2",
+        "account": "1000",
+        "debit": "0.00",
+        "credit": "451.99",
+        "memo": ""
+      }
+    ]
+  },
+  "expected": {
+    "decision": "warn",
+    "evidenceIds": [
+      "BANK-AUG-0212"
+    ],
+    "changedFields": []
+  }
+}

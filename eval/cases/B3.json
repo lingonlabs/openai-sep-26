@@ -1,0 +1,40 @@
+{
+  "id": "B3",
+  "title": "Outside active close period",
+  "entry": {
+    "id": "B3",
+    "postingDate": "2026-09-01",
+    "postingPeriod": "2026-09",
+    "currency": "USD",
+    "kind": "accrual",
+    "vendorId": "LANDLORD",
+    "invoiceId": null,
+    "bankLineId": null,
+    "payrollId": null,
+    "reversalOf": null,
+    "memo": "August rent accrual",
+    "lines": [
+      {
+        "id": "L1",
+        "account": "5000",
+        "debit": "5000.00",
+        "credit": "0.00",
+        "memo": ""
+      },
+      {
+        "id": "L2",
+        "account": "2100",
+        "debit": "0.00",
+        "credit": "5000.00",
+        "memo": ""
+      }
+    ]
+  },
+  "expected": {
+    "decision": "block",
+    "evidenceIds": [
+      "POLICY-AUG"
+    ],
+    "changedFields": []
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "id": "D3",
+  "title": "Wrong bank fee and period",
+  "entry": {
+    "id": "D3",
+    "postingDate": "2026-07-29",
+    "postingPeriod": "2026-07",
+    "currency": "USD",
+    "kind": "standard",
+    "vendorId": null,
+    "invoiceId": null,
+    "bankLineId": "BANK-AUG-0212",
+    "payrollId": null,
+    "reversalOf": null,
+    "memo": "Monthly bank fee",
+    "lines": [
+      {
+        "id": "L1",
+        "account": "6200",
+        "debit": "425.00",
+        "credit": "0.00",
+        "memo": ""
+      },
+      {
+        "id": "L2",
+        "account": "1000",
+        "debit": "0.00",
+        "credit": "425.00",
+        "memo": ""
+      }
+    ]
+  },
+  "expected": {
+    "decision": "block",
+    "evidenceIds": [
+      "POLICY-AUG",
+      "BANK-AUG-0212"
+    ],
+    "changedFields": [
+      "postingDate",
+      "postingPeriod",
+      "L1.debit",
+      "L2.credit"
+    ]
+  }
+}

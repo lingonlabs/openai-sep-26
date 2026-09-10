@@ -1,0 +1,40 @@
+{
+  "id": "B6",
+  "title": "Disputed invoice",
+  "entry": {
+    "id": "B6",
+    "postingDate": "2026-08-31",
+    "postingPeriod": "2026-08",
+    "currency": "USD",
+    "kind": "standard",
+    "vendorId": "BETA",
+    "invoiceId": "INV-88",
+    "bankLineId": null,
+    "payrollId": null,
+    "reversalOf": null,
+    "memo": "Disputed goods",
+    "lines": [
+      {
+        "id": "L1",
+        "account": "6800",
+        "debit": "850.00",
+        "credit": "0.00",
+        "memo": ""
+      },
+      {
+        "id": "L2",
+        "account": "2000",
+        "debit": "0.00",
+        "credit": "850.00",
+        "memo": ""
+      }
+    ]
+  },
+  "expected": {
+    "decision": "warn",
+    "evidenceIds": [
+      "DISPUTE-88"
+    ],
+    "changedFields": []
+  }
+}

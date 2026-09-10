@@ -1,0 +1,40 @@
+{
+  "id": "C2",
+  "title": "Supported large payroll",
+  "entry": {
+    "id": "C2",
+    "postingDate": "2026-08-31",
+    "postingPeriod": "2026-08",
+    "currency": "USD",
+    "kind": "payroll",
+    "vendorId": null,
+    "invoiceId": null,
+    "bankLineId": null,
+    "payrollId": "PAYROLL-AUG",
+    "reversalOf": null,
+    "memo": "August payroll",
+    "lines": [
+      {
+        "id": "L1",
+        "account": "5100",
+        "debit": "185000.00",
+        "credit": "0.00",
+        "memo": ""
+      },
+      {
+        "id": "L2",
+        "account": "2100",
+        "debit": "0.00",
+        "credit": "185000.00",
+        "memo": ""
+      }
+    ]
+  },
+  "expected": {
+    "decision": "allow",
+    "evidenceIds": [
+      "PAYROLL-AUG"
+    ],
+    "changedFields": []
+  }
+}

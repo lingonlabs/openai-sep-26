@@ -1,0 +1,30 @@
+import 'dotenv/config';
+import { readFile, writeFile, mkdir, chmod } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createGate, type GateOptions } from '../gate/provider.js';
+import { makeServer } from './server.js';
+import type { ClosePack } from '../shared/schema.js';
+const root=fileURLToPath(new URL('../../',import.meta.url));
+const pack:ClosePack=JSON.parse(await readFile(resolve(root,'data/close-pack.json'),'utf8'));
+const mode=process.env.GATE_MODE??'demo';
+if(mode!=='demo'&&mode!=='live')throw new Error('GATE_MODE must be demo or live');
+const port=Number(process.env.PORT??4317);const timeoutMs=Number(process.env.GATE_TIMEOUT_MS??8000);
+if(!Number.isInteger(port)||port<1024||port>65535)throw new Error('Invalid PORT');
+if(!Number.isFinite(timeoutMs)||timeoutMs<100||timeoutMs>30000)throw new Error('Invalid GATE_TIMEOUT_MS');
+await mkdir(resolve(root,'.local'),{recursive:true,mode:0o700});
+const tokenPath=resolve(root,'.local/relay-token');let token:string;
+try{token=(await readFile(tokenPath,'utf8')).trim();}catch{token=randomBytes(32).toString('hex');await writeFile(tokenPath,token+'\n',{mode:0o600});}
+await chmod(tokenPath,0o600);
+if(token.length<32)throw new Error('Invalid pairing token; remove .local/relay-token and restart');
+const gateOptions:GateOptions={mode,model:process.env.OPENAI_MODEL??'gpt-6-astra',apiKey:process.env.OPENAI_API_KEY||undefined,timeoutMs};
+const server=makeServer({root,token,port,pack,gateOptions,extensionOrigin:process.env.EXTENSION_ORIGIN,gate:createGate(pack,gateOptions)});
+server.listen(port,'127.0.0.1',()=>{
+  console.log(`Close Copilot: http://127.0.0.1:${port}/fixture`);
+  console.log(`Mode: ${mode==='demo'?'DEMO — deterministic synthetic rules, no model call':`LIVE — ${gateOptions.model}`}`);
+  console.log('Pairing token: .local/relay-token (paste into Connect locally; do not share it).');
+  if(mode==='live'&&!gateOptions.apiKey)console.log('Live checks unavailable until OPENAI_API_KEY is configured in .env.');
+});
+server.on('error',error=>{console.error(error.message);process.exitCode=1;});
+for(const signal of ['SIGTERM','SIGINT'] as const)process.on(signal,()=>server.close(()=>process.exit(0)));

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Close Copilot · Journal review lab</title><link rel="stylesheet" href="/fixture/styles.css"></head>
+<body>
+  <header class="topbar"><a class="brand" href="/fixture"><span class="brand-mark">c</span> close copilot <span class="lab-label">REVIEW LAB</span></a><span class="synthetic-badge">Synthetic company · simulated posting</span></header>
+  <div class="workspace">
+    <main>
+      <div class="breadcrumb">Seabrook Works <span>/</span> Accounting <span>/</span> Journal entries</div>
+      <div class="page-heading"><div><p class="eyebrow">AUGUST 2026 CLOSE</p><h1>Every entry. A little more certain.</h1><p class="subtitle">Review the evidence before the journal reaches the ledger.</p></div><span class="draft-badge">DRAFT</span></div>
+      <section class="scenario-bar"><label for="scenario">Demo entry</label><select id="scenario"></select><span id="entry-id"></span></section>
+      <form id="journal" data-close-copilot-fixture="true">
+        <section class="form-card"><div class="card-heading"><h2>Journal details</h2><span>USD · United States dollar</span></div><div class="fields">
+          <label>Posting date<input required type="date" data-field="postingDate"></label>
+          <label>Posting period<input required type="month" data-field="postingPeriod"></label>
+          <label>Vendor<input data-field="vendorId" placeholder="No vendor"></label>
+          <label>Invoice reference<input data-field="invoiceId" placeholder="No invoice"></label>
+          <label class="wide">Memo<input data-field="memo" maxlength="4000"></label>
+        </div></section>
+        <section class="form-card"><div class="card-heading"><h2>Journal lines</h2><span>Amounts in USD</span></div><div class="table-scroll"><table><thead><tr><th>Line</th><th>Account</th><th class="number">Debit</th><th class="number">Credit</th></tr></thead><tbody id="lines"></tbody><tfoot><tr><td colspan="2">Total</td><td id="debit-total" class="number"></td><td id="credit-total" class="number"></td></tr></tfoot></table></div><div class="balance-strip"><span id="balance-status">Balanced</span><span>Posting remains under your control</span></div></section>
+        <div class="save-row"><p id="save-status" role="status">This lab simulates a journal form. It does not post to NetSuite.</p><button class="button primary" type="submit" id="save">Save journal <span>↗</span></button></div>
+      </form>
+      <section class="how-it-works"><span class="eyebrow">THE REVIEW FLOW</span><div><p><b>01</b> Read the entry</p><p><b>02</b> Check the close pack</p><p><b>03</b> Review &amp; save</p></div></section>
+    </main>
+    <aside class="copilot-panel"><div class="panel-heading"><span class="brand-mark small">c</span><div><h2>Close Copilot</h2><p>Your second set of eyes</p></div><span class="connection-dot"></span></div>
+      <div class="mode-banner" id="mode">Connecting to relay…</div>
+      <form id="pair" class="pair-form"><label for="token">Local pairing token</label><p>Paste the token from <code>.local/relay-token</code>.</p><div><input id="token" type="password" autocomplete="off" placeholder="Local token"><button class="button primary" type="submit">Connect</button></div><p id="pair-error" role="alert"></p></form>
+      <div id="pack-info" class="pack-info" hidden></div><div id="review"></div>
+      <div class="panel-footer">Evidence first. You make the final call.</div>
+    </aside>
+  </div><script type="module" src="/fixture/app.js"></script>
+</body></html>

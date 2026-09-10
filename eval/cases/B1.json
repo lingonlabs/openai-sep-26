@@ -1,0 +1,40 @@
+{
+  "id": "B1",
+  "title": "Unbalanced journal",
+  "entry": {
+    "id": "B1",
+    "postingDate": "2026-08-31",
+    "postingPeriod": "2026-08",
+    "currency": "USD",
+    "kind": "accrual",
+    "vendorId": "LANDLORD",
+    "invoiceId": null,
+    "bankLineId": null,
+    "payrollId": null,
+    "reversalOf": null,
+    "memo": "August rent accrual",
+    "lines": [
+      {
+        "id": "L1",
+        "account": "5000",
+        "debit": "5000.00",
+        "credit": "0.00",
+        "memo": ""
+      },
+      {
+        "id": "L2",
+        "account": "2100",
+        "debit": "0.00",
+        "credit": "4900.00",
+        "memo": ""
+      }
+    ]
+  },
+  "expected": {
+    "decision": "block",
+    "evidenceIds": [
+      "ENTRY-BALANCE"
+    ],
+    "changedFields": []
+  }
+}

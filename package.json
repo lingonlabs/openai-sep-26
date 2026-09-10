@@ -1,0 +1,33 @@
+{
+  "name": "close-copilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsx scripts/build.ts",
+    "dev": "npm run build && tsx src/relay/main.ts",
+    "start": "tsx src/relay/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:browser": "playwright test",
+    "eval:gate": "tsx eval/gate.ts",
+    "check": "npm run typecheck && npm test && npm run build",
+    "smoke:live": "tsx scripts/smoke-live.ts"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "openai": "^7.13.0",
+    "zod": "^4.6.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/chrome": "^0.2.9",
+    "@types/node": "^22.20.2",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

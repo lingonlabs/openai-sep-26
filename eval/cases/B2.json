@@ -1,0 +1,40 @@
+{
+  "id": "B2",
+  "title": "Invalid account",
+  "entry": {
+    "id": "B2",
+    "postingDate": "2026-08-31",
+    "postingPeriod": "2026-08",
+    "currency": "USD",
+    "kind": "standard",
+    "vendorId": "OMEGA",
+    "invoiceId": null,
+    "bankLineId": null,
+    "payrollId": null,
+    "reversalOf": null,
+    "memo": "Office supplies",
+    "lines": [
+      {
+        "id": "L1",
+        "account": "6890",
+        "debit": "850.00",
+        "credit": "0.00",
+        "memo": ""
+      },
+      {
+        "id": "L2",
+        "account": "2000",
+        "debit": "0.00",
+        "credit": "850.00",
+        "memo": ""
+      }
+    ]
+  },
+  "expected": {
+    "decision": "block",
+    "evidenceIds": [
+      "COA"
+    ],
+    "changedFields": []
+  }
+}

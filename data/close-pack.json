@@ -1,0 +1,161 @@
+{
+  "version": "synthetic-aug-2026-v1",
+  "company": "Seabrook Works (synthetic)",
+  "synthetic": true,
+  "period": "2026-08",
+  "accounts": [
+    {
+      "id": "1000",
+      "name": "Operating cash",
+      "active": true
+    },
+    {
+      "id": "2000",
+      "name": "Accounts payable",
+      "active": true
+    },
+    {
+      "id": "2100",
+      "name": "Accrued expenses",
+      "active": true
+    },
+    {
+      "id": "5000",
+      "name": "Rent expense",
+      "active": true
+    },
+    {
+      "id": "5100",
+      "name": "Payroll expense",
+      "active": true
+    },
+    {
+      "id": "6200",
+      "name": "Bank fees",
+      "active": true
+    },
+    {
+      "id": "6800",
+      "name": "Office supplies",
+      "active": true
+    }
+  ],
+  "postedEntries": [
+    {
+      "id": "JE-1187",
+      "date": "2026-08-14",
+      "period": "2026-08",
+      "vendorId": "ACME",
+      "invoiceId": "4471",
+      "amount": "12400.00",
+      "currency": "USD",
+      "kind": "standard"
+    },
+    {
+      "id": "JE-1100",
+      "date": "2026-07-31",
+      "period": "2026-07",
+      "vendorId": "LANDLORD",
+      "invoiceId": null,
+      "amount": "5000.00",
+      "currency": "USD",
+      "kind": "accrual"
+    },
+    {
+      "id": "JE-1170",
+      "date": "2026-08-01",
+      "period": "2026-08",
+      "vendorId": null,
+      "invoiceId": null,
+      "amount": "3000.00",
+      "currency": "USD",
+      "kind": "accrual"
+    }
+  ],
+  "bankLines": [
+    {
+      "id": "BANK-AUG-0212",
+      "date": "2026-08-29",
+      "amount": "452.00",
+      "currency": "USD",
+      "description": "Monthly service fee"
+    }
+  ],
+  "payroll": [
+    {
+      "id": "PAYROLL-AUG",
+      "amount": "185000.00"
+    }
+  ],
+  "vendorHistory": [
+    {
+      "id": "VENDOR-ACME",
+      "vendorId": "ACME",
+      "typicalAmount": "1240.00"
+    }
+  ],
+  "disputedInvoices": [
+    {
+      "id": "DISPUTE-88",
+      "vendorId": "BETA",
+      "invoiceId": "INV-88"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "POLICY-AUG",
+      "source": "close_checklist",
+      "text": "Synthetic demo policy: August 2026 is the active close. Posting date must be within August 2026 and posting period must be 2026-08. July is closed. September is outside this workflow. A bank difference of exactly $0.01 is a rounding warning; larger documented differences block."
+    },
+    {
+      "id": "COA",
+      "source": "chart_of_accounts",
+      "text": "Active USD accounts: 1000 Operating cash; 2000 Accounts payable; 2100 Accrued expenses; 5000 Rent expense; 5100 Payroll expense; 6200 Bank fees; 6800 Office supplies. Account 6890 is not valid; 6800 is Office supplies. This is the complete demo account list."
+    },
+    {
+      "id": "TB-AUG",
+      "source": "trial_balance",
+      "text": "Opening August balances, USD: Cash debit 250000.00; accounts payable credit 160000.00; accrued expenses credit 90000.00. Expense accounts begin at zero in this synthetic fixture."
+    },
+    {
+      "id": "JE-1187",
+      "source": "posted_entries",
+      "text": "JE 1187 posted 2026-08-14 in period 2026-08: vendor ACME, invoice 4471, USD 12400.00, office supplies debit and accounts payable credit."
+    },
+    {
+      "id": "JE-1100",
+      "source": "posted_entries",
+      "text": "JE 1100 posted 2026-07-31 in period 2026-07: vendor LANDLORD, July rent accrual, USD 5000.00. A separate August rent accrual is expected and is not a duplicate."
+    },
+    {
+      "id": "JE-1170",
+      "source": "posted_entries",
+      "text": "JE 1170 posted 2026-08-01, accrual USD 3000.00, office supplies debit and accrued expenses credit. One explicitly linked reversal with mirrored accounts is valid."
+    },
+    {
+      "id": "BANK-AUG-0212",
+      "source": "bank_statement",
+      "text": "Bank line 212: 2026-08-29, USD 452.00 debit from operating cash, monthly bank service fee. Journal: bank fees debit 452.00, operating cash credit 452.00."
+    },
+    {
+      "id": "PAYROLL-AUG",
+      "source": "payroll_register",
+      "text": "August payroll register: approved payroll accrual USD 185000.00, payroll expense debit and accrued expenses credit."
+    },
+    {
+      "id": "LEASE-AUG",
+      "source": "lease",
+      "text": "LANDLORD lease: monthly rent USD 5000.00. August rent is not yet accrued. Accrue August separately from July."
+    },
+    {
+      "id": "VENDOR-ACME",
+      "source": "vendor_history",
+      "text": "ACME usual supply invoices are USD 1240.00. A new unmatched invoice of USD 12400.00 is unusual and needs a warning, but size alone does not establish an error. Exact already-posted invoices are duplicates."
+    },
+    {
+      "id": "DISPUTE-88",
+      "source": "close_checklist",
+      "text": "Vendor BETA invoice INV-88 for USD 850.00 is disputed. Review before posting; warning only under the demo policy."
+    }
+  ]
+}
