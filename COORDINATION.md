@@ -89,7 +89,7 @@ passed that check. Preserve this rule during all later dependency changes.
 
 | Prototype | Branch / PR | Status | Next step / blocker |
 | --- | --- | --- | --- |
-| Ambient local | `prototype/ambient-local`, `da80b0c` | Persistent ambient agent live; editable instructions, choices, memory, and execution pause implemented | Improve Sheet row capture; validate full Gmail investigation and unsaved bill preparation |
+| Ambient local | `prototype/ambient-local`, `a344ba0` | Persistent ambient agent live; repaired stale pending offers and lost return-visit signals | Verify repaired offer on live return; improve Sheet row capture and full investigation |
 | Teammate prototype | — | Awaiting teammate update | Record branch and comparison-ready milestone |
 
 ## Handoff log
@@ -131,3 +131,10 @@ Append concise entries: date, owner, commit/PR, changes, verification, next step
   minor changes stayed quiet. The real onboarding Sheet exposed no vendor rows;
   vendor-change detection needs better browser-content capture. See `docs/AMBIENT.md`
   and `docs/VALIDATION.md` on the implementation branch.
+- 2026-09-10 — `a344ba0`: user reported an invisible “pending” bill offer. Navigation
+  had removed the UI offer without correcting model memory; coalesced updates also
+  lost the new-visit flag. The evaluator now receives the actual current offer list,
+  removals are recorded separately from declines, response cooldowns preserve fresh
+  return offers, and coalescing retains visits. All 27 tests, types, and build pass;
+  real Astra synthetic test re-offered on return despite stale pending memory.
+  Backend restarted and extension reconnected; no extension reload required.
