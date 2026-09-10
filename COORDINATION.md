@@ -60,8 +60,8 @@ passed that check. Preserve this rule during all later dependency changes.
 ## Integration milestones
 
 - [x] Choose independent full-stack prototypes and record the Ambient branch.
-- [ ] Detect the real NetSuite bill screen and send its context to the backend.
-- [ ] Return and display a suggestion beside the watched-page icon.
+- [x] Detect the real NetSuite bill screen and send its context to the backend.
+- [x] Return and display a suggestion beside the watched-page icon (user-confirmed).
 - [x] Execute one agent-requested browser action and return its observation (live NetSuite Home inspection).
 - [ ] Investigate Gmail invoices and compare against NetSuite records.
 - [ ] Check vendor onboarding where the sheet is included.
@@ -85,7 +85,7 @@ passed that check. Preserve this rule during all later dependency changes.
 
 | Prototype | Branch / PR | Status | Next step / blocker |
 | --- | --- | --- | --- |
-| Ambient local | `prototype/ambient-local`, `5979bca` | Built and paired; live NetSuite Home inspection succeeded through extension | Validate Add New Bill detection, Gmail investigation, and unsaved bill preparation |
+| Ambient local | `prototype/ambient-local`, initial code `5979bca` | Live inspection succeeded; user confirmed ambient suggestion on Add New Bill | Validate Gmail investigation and unsaved bill preparation |
 | Teammate prototype | — | Awaiting teammate update | Record branch and comparison-ready milestone |
 
 ## Handoff log
@@ -107,3 +107,6 @@ Append concise entries: date, owner, commit/PR, changes, verification, next step
   agent-requested Home inspection completed through the extension with no page
   changes. Direct Chrome automation is not part of this workflow. Full Gmail and
   bill-entry validation remains open; see `docs/VALIDATION.md` on the code branch.
+- 2026-09-10 — User confirmed the floating invoice-check suggestion appeared after
+  opening Add New Bill in real NetSuite. Next: select demo Gmail in the same
+  workspace and accept the investigation to validate the cross-tab workflow.
