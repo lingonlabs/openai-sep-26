@@ -110,3 +110,10 @@ Append concise entries: date, owner, commit/PR, changes, verification, next step
 - 2026-09-10 — User confirmed the floating invoice-check suggestion appeared after
   opening Add New Bill in real NetSuite. Next: select demo Gmail in the same
   workspace and accept the investigation to validate the cross-tab workflow.
+- 2026-09-10 — Improved activity visibility, Markdown chat, and repeat bill visits.
+  Browser errors now retain their messages; Activity opens automatically and shows
+  current work. Gmail fill succeeded after replacing page-wide mutation checks
+  with target-control validation. A second fix recognizes the live “Ask Gmail”
+  search input by search semantics so Enter can run; final live retry pending.
+  Extension reload now preserves workspace selections. All 19 tests, type checks,
+  build, and the updated 699-package release-age audit pass.
