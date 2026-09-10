@@ -89,7 +89,7 @@ passed that check. Preserve this rule during all later dependency changes.
 
 | Prototype | Branch / PR | Status | Next step / blocker |
 | --- | --- | --- | --- |
-| Ambient local | `prototype/ambient-local`, `4c50df2` | Inline popup user-confirmed; added completion review/recovery and collapsed message findings | Reload and continue prior invoice task to validate recovery; improve Sheet capture |
+| Ambient local | `prototype/ambient-local`, `e7745b1` | Added actionable handoffs, queued updates, explicit activity state, and progress-aware recovery; 40 tests pass | Reload and use Continue task on prior invoice conversation; improve Sheet capture |
 | Teammate prototype | — | Awaiting teammate update | Record branch and comparison-ready milestone |
 
 ## Handoff log
@@ -155,3 +155,14 @@ Append concise entries: date, owner, commit/PR, changes, verification, next step
   continued recoverable work, stopped for sign-in, and accepted completed work.
   Chat UI was visually and interactively checked. Backend restarted; extension
   reload and live continuation requested. No dependencies changed.
+- 2026-09-10 — `e7745b1`: fixed confirmation and activity ambiguity with structured
+  handoffs in chat and the floating popup, same-task confirmation/free-text replies,
+  visible queued updates during execution, and persistent active/idle task status.
+  The real paused task had hit our three-pass cap despite an untried next step.
+  Recovery now continues with fresh evidence inside the existing ten-minute limit;
+  repeated plans without progress still pause. All 40 tests, types, and build pass,
+  plus three live Astra review checks using synthetic data. Synthetic popup checks
+  verified confirmation, queued reply acknowledgment, and paused continuation.
+  Backend restarted while idle and extension reconnected. Reload the extension,
+  then use Continue task on the existing conversation for real workflow validation.
+  No dependencies changed and no real account actions were performed for testing.
