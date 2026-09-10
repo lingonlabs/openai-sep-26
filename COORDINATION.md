@@ -89,7 +89,7 @@ passed that check. Preserve this rule during all later dependency changes.
 
 | Prototype | Branch / PR | Status | Next step / blocker |
 | --- | --- | --- | --- |
-| Ambient local | `prototype/ambient-local`, `15661bf` | Julie's Lingon styling reviewed and fast-forwarded; 42 tests pass; live Sheet visual baselines verified | Reload branded extension; next proposed improvements are full Sheet cell reading and Follow agent |
+| Ambient local | `prototype/ambient-local`, `3ac7622` | Added Sheets name-box navigation/formula-bar reading and Follow agent; 44 tests pass; demo DB reset | Reload extension, reopen panel, run the full demo; final cell navigation still needs live validation |
 | Teammate prototype | — | Awaiting teammate update | Record branch and comparison-ready milestone |
 
 ## Handoff log
@@ -185,3 +185,14 @@ Append concise entries: date, owner, commit/PR, changes, verification, next step
   Main extension rebuilt and backend restarted while idle. Reload the existing
   extension to see Lingon Labs branding; continue future work from `15661bf`.
   Live Sheet screenshot baselines were also confirmed through local extension state.
+- 2026-09-10 — `3ac7622`: light-touch Sheets support recognizes the actual Name
+  box only on Sheets, accepts one A1 address, permits native Enter for selection,
+  and includes visible formula-bar text in inspection. Prompt requires screenshot
+  fallback before requesting transcription. Follow agent beside the input is saved
+  locally, defaults on, and focuses execution tabs only. Also fixed the SDK's
+  `item.content.map` failure on string assistant handoffs using structured content
+  and legacy-history normalization. All 44 tests, types, and build pass. No new
+  dependencies. User-requested demo DB reset clears conversations/findings/memory
+  and restores default help instructions; local backup retained, pairing and Chrome
+  workspace selections preserved. Final native cell navigation and Follow agent
+  behavior need the user's run after reload.
