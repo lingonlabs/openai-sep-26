@@ -89,7 +89,7 @@ passed that check. Preserve this rule during all later dependency changes.
 
 | Prototype | Branch / PR | Status | Next step / blocker |
 | --- | --- | --- | --- |
-| Ambient local | `prototype/ambient-local`, `a344ba0` | Persistent ambient agent live; repaired stale pending offers and lost return-visit signals | Verify repaired offer on live return; improve Sheet row capture and full investigation |
+| Ambient local | `prototype/ambient-local`, `f1f1d79` | Return offers user-confirmed; choices/free text now directly in floating popup | Reload extension to verify native panel opening; improve Sheet capture and full investigation |
 | Teammate prototype | — | Awaiting teammate update | Record branch and comparison-ready milestone |
 
 ## Handoff log
@@ -138,3 +138,10 @@ Append concise entries: date, owner, commit/PR, changes, verification, next step
   return offers, and coalescing retains visits. All 27 tests, types, and build pass;
   real Astra synthetic test re-offered on return despite stale pending memory.
   Backend restarted and extension reconnected; no extension reload required.
+- 2026-09-10 — `f1f1d79`: user confirmed return offers work and requested choices
+  in the floating popup. Added shared action card, inline custom requests, progress,
+  Stop, draft preservation, and visible errors. Panel opening targets Chrome's
+  global window context; rejection exposes an assistant-tab fallback. All 29 tests,
+  types, and build pass. Synthetic browser checks verified custom and selected
+  submissions, preserved drafts, progress, and simulated error recovery. Extension
+  reload requested; native Chrome panel opening remains to be verified live.
