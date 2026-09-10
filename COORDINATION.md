@@ -31,6 +31,10 @@ for review before submission.
 - Named workspaces with selected tabs and a floating icon on watched pages.
 - Monitoring, suggestions, working, and paused states; pause and stop controls.
 - Compact coordinator history per workspace; separate detailed task histories.
+- Editable standing instructions in “Help me with…”, with a persistent ambient
+  agent deciding whether to stay quiet, offer help, or ask with choices and free text.
+- Stop ambient inspection during execution; resume from a fresh baseline so the
+  agent does not react to its own browser changes.
 - Suppress repeated suggestions and agent-generated triggers; recheck page state
   before actions. One agent controls a workspace's browser at a time.
 
@@ -85,7 +89,7 @@ passed that check. Preserve this rule during all later dependency changes.
 
 | Prototype | Branch / PR | Status | Next step / blocker |
 | --- | --- | --- | --- |
-| Ambient local | `prototype/ambient-local`, initial code `5979bca` | Live inspection succeeded; user confirmed ambient suggestion on Add New Bill | Validate Gmail investigation and unsaved bill preparation |
+| Ambient local | `prototype/ambient-local`, `da80b0c` | Persistent ambient agent live; editable instructions, choices, memory, and execution pause implemented | Improve Sheet row capture; validate full Gmail investigation and unsaved bill preparation |
 | Teammate prototype | — | Awaiting teammate update | Record branch and comparison-ready milestone |
 
 ## Handoff log
@@ -117,3 +121,13 @@ Append concise entries: date, owner, commit/PR, changes, verification, next step
   search input by search semantics so Enter can run; final live retry pending.
   Extension reload now preserves workspace selections. All 19 tests, type checks,
   build, and the updated 699-package release-age audit pass.
+- 2026-09-10 — Ambient prototype `da80b0c`: replaced the deterministic offer trigger
+  with a persistent, tool-free Astra evaluator per workspace. Added “Help me with…”
+  instructions, remembered visits and responses, choices plus free text, and full
+  observation suspension during execution with a fresh baseline afterward. All 25
+  tests, type checks, and production build pass; no dependency changes. Real Astra
+  synthetic test offered help on a fifth visit and stayed quiet after a decline.
+  After the user reloaded, real NetSuite observations produced an offer and later
+  minor changes stayed quiet. The real onboarding Sheet exposed no vendor rows;
+  vendor-change detection needs better browser-content capture. See `docs/AMBIENT.md`
+  and `docs/VALIDATION.md` on the implementation branch.

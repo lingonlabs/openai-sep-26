@@ -180,7 +180,7 @@
 
     <section id="ambient">
       <p class="eyebrow">05 / Ambient operation</p><h2>Continuous awareness through meaningful events</h2>
-      <p>The ambient experience comes from lightweight page observers and short, purposeful agent runs. Page navigation, entry into a bill form, and vendor selection update workspace state. The backend evaluates useful changes and decides whether to stay quiet, refresh a suggestion, or offer a new task.</p>
+      <p>The ambient experience now uses lightweight page observers and one logical, persistent Astra agent per workspace. Users describe standing goals in <strong>Help me with…</strong>. Debounced rendered-page observations update compact memory, visit counts, and response history in SQLite. Short, tool-free evaluations decide whether to stay quiet, offer help, or ask a question with choices and a “Something else” text box.</p>
       <div class="callout"><p class="quote">Observe → summarize context → evaluate usefulness → suggest → act when accepted → verify</p></div>
       <div class="grid">
         <div class="card"><h3>Local observation</h3><p>Detect relevant page transitions and form context, debounce bursts of changes, and attach a page version. Keep ordinary DOM churn out of the conversation. Send compact observations when they matter.</p></div>
@@ -188,12 +188,12 @@
       </div>
       <ul>
         <li><strong>Remember dismissals.</strong> Use cooldowns and context-aware deduplication so the same offer does not keep returning.</li>
-        <li><strong>Ignore self-generated triggers.</strong> Agent actions should not create a loop of new ambient suggestions.</li>
+        <li><strong>Pause inspection during execution.</strong> Disconnect background observers and cancel ambient inference while the task agent works. Resume with a fresh page baseline so its own changes do not trigger new suggestions.</li>
         <li><strong>Discard stale decisions.</strong> If the user leaves the form while a suggestion is being generated, re-evaluate its relevance before displaying it.</li>
         <li><strong>Separate watching from acting.</strong> Ambient evaluation observes; an accepted task can request the browser controls needed for its scope.</li>
         <li><strong>Report real state.</strong> Paused, disconnected, and working should be distinguishable. Background tabs can be throttled or discarded, so the interface should not claim perfect continuous observation.</li>
       </ul>
-      <p>Chrome’s extension service worker is event-driven and may stop when idle. We will persist needed state and use reconnectable messaging, with the ongoing agent task owned by the backend.</p>
+      <p>Chrome’s extension service worker is event-driven and may stop when idle. Workspace instructions and compact ambient memory persist locally, with reconnectable messaging and agent tasks owned by the backend. Ambient observations currently contain rendered DOM text, not screenshots: hidden rows and canvas-based Sheets content may be unavailable. The live onboarding Sheet exposed no vendor rows, so new-vendor detection there remains unvalidated.</p>
     </section>
 
     <section id="memory">
@@ -253,7 +253,7 @@
     shared/          # Zod schemas and shared types
   docs/              # Implementation documentation
   .env.example       # Names and placeholders, never credentials</code></pre>
-      <p class="small">The initial Ambient prototype implements this package layout on <code>prototype/ambient-local</code> at <code>5979bca</code>. Tests, type checks, build, and API connection passed. A live NetSuite Home inspection completed through the paired extension; bill entry and Gmail remain to be validated.</p>
+      <p class="small">The Ambient prototype implements this package layout on <code>prototype/ambient-local</code> at <code>da80b0c</code>. All 25 tests, type checks, and production build passed. Live NetSuite inspection and the persistent ambient evaluator work through the paired extension. Astra offered help on a bill page and stayed quiet while the offer was pending. Full Gmail investigation, bill preparation, and Sheet row capture remain validation targets.</p>
     </section>
 
     <section id="team">
