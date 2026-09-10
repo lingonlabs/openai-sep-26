@@ -12,13 +12,25 @@ export function PresencePreview({ initial }: { initial: Suggestion }) {
   const [task, setTask] = useState<TaskPresence | null>(null);
   useEffect(() => { setShadow(host.current!.shadowRoot ?? host.current!.attachShadow({ mode: 'open' })); }, []);
   useEffect(() => { const interval = setInterval(() => setTick(value => value + 1), 2000); return () => clearInterval(interval); }, []);
-  return <main className="presence-preview"><div className="preview-logo"><img src={lingonLogo} alt=""/>Lingon Labs</div><h1>A little help.<br/>Right where you work.</h1><a className="preview-return" href="/preview">← Back to the side panel</a>
-    <p>Synthetic page. Choices exercise the popup without touching accounts. Background updates arrive every two seconds.</p>
-    <p role="status">Preview updates: {tick}. {last}</p>
-    <label><input type="checkbox" checked={failPanel} onChange={event => setFailPanel(event.target.checked)}/> Simulate a Chrome panel error</label>
-    <p><button onClick={() => { setSuggestion({ ...initial, id: crypto.randomUUID() }); setWorking(false); setTask(null); }}>Reset offer</button></p>
-    <p><button onClick={() => { setWorking(false); setSuggestion(null); setTask({ id: 'preview-task', status: 'blocked', queuedReplyCount: 0, handoff: { kind: 'user', reason: 'The PDF needs opening.', nextStep: 'Open the invoice PDF in the selected Gmail tab.' } }); }}>Preview PDF handoff</button></p>
-    <p><button onClick={() => { setWorking(false); setSuggestion(null); setTask({ id: 'preview-task', status: 'blocked', queuedReplyCount: 0, handoff: { kind: 'limit', reason: 'Reached the work time limit.', nextStep: 'Reinspect the selected NetSuite tab and continue the record check.' } }); }}>Preview paused task</button></p>
+  return <main className="presence-preview">
+    <header className="preview-heading">
+      <div className="preview-logo"><img src={lingonLogo} alt=""/>Lingon Labs</div>
+      <h1>Floating assistant preview</h1>
+      <p>Sample data · No accounts connected</p>
+      <nav className="preview-navigation" aria-label="Preview navigation">
+        <a className="preview-return" href="/preview">← Side panel</a>
+        <details className="preview-tools">
+          <summary>Demo controls</summary>
+          <div className="preview-tools-panel">
+            <button onClick={() => { setSuggestion({ ...initial, id: crypto.randomUUID() }); setWorking(false); setTask(null); }}>Reset offer</button>
+            <button onClick={() => { setWorking(false); setSuggestion(null); setTask({ id: 'preview-task', status: 'blocked', queuedReplyCount: 0, handoff: { kind: 'user', reason: 'The PDF needs opening.', nextStep: 'Open the invoice PDF in the selected Gmail tab.' } }); }}>Preview PDF handoff</button>
+            <button onClick={() => { setWorking(false); setSuggestion(null); setTask({ id: 'preview-task', status: 'blocked', queuedReplyCount: 0, handoff: { kind: 'limit', reason: 'Reached the work time limit.', nextStep: 'Reinspect the selected NetSuite tab and continue the record check.' } }); }}>Preview paused task</button>
+            <label><input type="checkbox" checked={failPanel} onChange={event => setFailPanel(event.target.checked)}/> Simulate a Chrome panel error</label>
+            <p role="status">Preview updates: {tick}. {last}</p>
+          </div>
+        </details>
+      </nav>
+    </header>
     <div ref={host}/>
     {shadow && createPortal(<><style>{presenceStyles}</style><Presence paused={false} monitoring working={working} suggestion={suggestion} task={task}
       progress="Reading invoice evidence · synthetic preview" onPosition={top => { host.current!.style.top = top + 'px'; host.current!.style.setProperty('--ambient-top', top + 'px'); }}
