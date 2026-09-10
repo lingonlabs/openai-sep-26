@@ -89,6 +89,23 @@ test("pending vendor blocks preparation status", () => {
     "vendor_review",
   );
 });
+test("a literal vendor placeholder cannot become a preparation candidate", () => {
+  const e = extraction();
+  e.invoices[0].vendor = "[Exact existing NetSuite vendor name]";
+  const [finding] = assessInvoices(
+    e,
+    [
+      {
+        ...evidence[0],
+        text: "[Exact existing NetSuite vendor name] MD-2608 USD 4250.00",
+      },
+    ],
+    "w",
+    "t",
+  );
+  assert.equal(finding.status, "needs_review");
+  assert.match(finding.reason, /placeholder/);
+});
 test("rejects fabricated and unsupported citations and deduplicates invoices", () => {
   const e = extraction();
   e.invoices[0].evidenceIds = ["invented"];

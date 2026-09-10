@@ -127,9 +127,9 @@ export class Manager {
     );
     if (b.activeWorkspaceId) {
       const w = this.workspace(b.activeWorkspaceId);
-      const lost = w.tabIds.filter(
-        (t) => !b.tabs.some((x) => x.id === t && x.connected),
-      );
+      // Chrome marks a supported tab disconnected while its next page loads.
+      // Only a missing/unsupported tab leaves the workspace.
+      const lost = w.tabIds.filter((t) => !b.tabs.some((x) => x.id === t));
       if (lost.length && w.activeTaskId)
         this.stop(
           w.id,
@@ -268,13 +268,11 @@ export class Manager {
         task.summary = reason;
         this.store.put("task", task.id, task);
         this.tasks.get(task.id)?.abort();
-        this.broker.browsers
-          .get(w.bridgeId)
-          ?.send({
-            type: "browser.cancel",
-            workspaceId: w.id,
-            taskId: task.id,
-          });
+        this.broker.browsers.get(w.bridgeId)?.send({
+          type: "browser.cancel",
+          workspaceId: w.id,
+          taskId: task.id,
+        });
         this.activity(w.id, task.id, reason);
       }
     }

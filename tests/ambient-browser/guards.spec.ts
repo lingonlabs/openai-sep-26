@@ -127,6 +127,95 @@ test("stop invalidates queued commands for that task", async ({ page }) => {
   await page.evaluate(() => (window as any).runtime.cancel("t"));
   expect((await run(page, { kind: "inspect" })).code).toBe("TASK_STOPPED");
 });
+test("Gmail's Ask Gmail field supports search without allowing edits to other fields", async ({
+  page,
+}) => {
+  await page.setContent(
+    '<input aria-label="Ask Gmail"><input aria-label="Message body">',
+  );
+  const ids = await page.evaluate(() => {
+    (window as any).runtime = new (window as any).TestRuntime(
+      document,
+      "ns",
+      "gmail",
+    );
+    return (window as any).runtime.inspect().elements.map((e: any) => e.id);
+  });
+  expect(
+    (
+      await run(page, {
+        kind: "fill",
+        elementId: ids[0],
+        value: '"TEST-20260910-01"',
+      })
+    ).status,
+  ).toBe("ok");
+  await expect(page.getByLabel("Ask Gmail")).toHaveValue('"TEST-20260910-01"');
+  expect(
+    (await run(page, { kind: "key", elementId: ids[0], key: "Enter" })).status,
+  ).toBe("ok");
+  expect(
+    (
+      await run(page, {
+        kind: "fill",
+        elementId: ids[1],
+        value: "Do not write",
+      })
+    ).code,
+  ).toBe("ACTION_BLOCKED");
+  await page.evaluate(() => {
+    (window as any).runtime = new (window as any).TestRuntime(
+      document,
+      "ns",
+      "netsuite",
+    );
+  });
+  expect(
+    (await run(page, { kind: "fill", elementId: ids[0], value: "wrong app" }))
+      .code,
+  ).toBe("ACTION_BLOCKED");
+});
+test("NetSuite required labels are recognized without typing into an unverified vendor picker", async ({
+  page,
+}) => {
+  await page.setContent(`<title>Bill - NetSuite</title>
+    <span id="vendor-label">Vendor\n*</span>
+    <input aria-labelledby="vendor-label" role="combobox" value=" ">
+    <span id="ref-label">Reference No.\n*</span>
+    <input aria-labelledby="ref-label">
+    <span id="currency-label">Currency\n*</span>
+    <input aria-labelledby="currency-label" role="combobox" value="US Dollar">
+    <label>Date *<input value="09/10/2026"></label>
+    <label>Bill Total<input></label>`);
+  const observation = await page.evaluate(() =>
+    (window as any).runtime.inspect(),
+  );
+  expect(observation.context.workflow).toBe("bill_form");
+  expect(observation.context.vendor).toBeNull();
+  expect(observation.elements.map((e: any) => e.label)).toContain("Currency");
+  const result = await run(
+    page,
+    {
+      kind: "prepare_bill",
+      values: {
+        vendor: "Marlow Design",
+        invoiceNumber: "MD-2608",
+        invoiceDate: "2026-08-28",
+        dueDate: null,
+        amount: "4250.00",
+        currency: "USD",
+        memo: "Design",
+      },
+    },
+    { phase: "prepare" },
+  );
+  expect(result.code).toBe("UNSUPPORTED_VENDOR_SELECTOR");
+  expect(result.outcome).toBe("not_executed");
+  await expect(page.getByRole("combobox", { name: "Vendor" })).toHaveValue(" ");
+  await expect(
+    page.getByRole("textbox", { name: "Reference No." }),
+  ).toHaveValue("");
+});
 
 test("refuses to overwrite existing bill details or assume currency", async ({
   page,

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type {
   BrowserAction,
   BrowserCommand,
@@ -62,8 +63,18 @@ export class BrowserBroker {
       workspace.pausedTabIds.includes(tabId)
     )
       throw new Error("The requested tab is outside the active workspace");
-    const browser = this.browsers.get(workspace.bridgeId);
-    const tab = browser?.tabs.find((t) => t.id === tabId);
+    let browser = this.browsers.get(workspace.bridgeId);
+    let tab = browser?.tabs.find((t) => t.id === tabId);
+    // A safe navigation can return before Chrome finishes loading. Wait for
+    // readiness, without repeating the action that initiated navigation.
+    const readyDeadline = Date.now() + 10000;
+    while (browser && tab && !tab.connected && Date.now() < readyDeadline) {
+      await delay(100, undefined, { signal });
+      if (this.store.get<Task>("task", task.id)?.status !== "running")
+        throw new Error("Task is no longer active");
+      browser = this.browsers.get(workspace.bridgeId);
+      tab = browser?.tabs.find((t) => t.id === tabId);
+    }
     if (
       !browser ||
       browser.activeWorkspaceId !== workspace.id ||

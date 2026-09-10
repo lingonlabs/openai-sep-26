@@ -173,3 +173,86 @@ test("pending and recorded findings cannot be prepared", async () => {
     store.close();
   }
 });
+test("loading a selected tab preserves the task; leaving its app still stops it", async () => {
+  const { manager, broker, w, store } = await harness();
+  try {
+    const task = (await manager.request("investigation.start", {
+      workspaceId: w.id,
+    })) as Task;
+    const tabs = broker.browsers.get("browser")!.tabs;
+    manager.inventory(
+      "browser",
+      tabs.map((t) => ({ ...t, connected: t.id !== "ns" })),
+    );
+    assert.equal(store.get<Task>("task", task.id)?.status, "running");
+    manager.inventory("browser", tabs);
+    assert.equal(store.get<Task>("task", task.id)?.status, "running");
+    manager.inventory(
+      "browser",
+      tabs.map((t) =>
+        t.id === "ns" ? { ...t, url: "https://example.com/" } : t,
+      ),
+    );
+    assert.equal(store.get<Task>("task", task.id)?.status, "stopped");
+    await new Promise((r) => setTimeout(r, 20));
+  } finally {
+    manager.close();
+    store.close();
+  }
+});
+test("the broker waits for a loading page and sends the next inspection only once", async () => {
+  const { manager, broker, w, store, commands } = await harness();
+  try {
+    const task = (await manager.request("investigation.start", {
+      workspaceId: w.id,
+    })) as Task;
+    const tabs = broker.browsers.get("browser")!.tabs;
+    manager.inventory(
+      "browser",
+      tabs.map((t) => ({ ...t, connected: t.id !== "ns" })),
+    );
+    const count = commands.length;
+    const result = broker.command(
+      task,
+      "ns",
+      { kind: "inspect" },
+      new AbortController().signal,
+    );
+    assert.equal(commands.length, count);
+    manager.inventory("browser", tabs);
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(commands.length, count + 1);
+    const command = commands.at(-1)!;
+    broker.receive("browser", {
+      type: "browser.result",
+      commandId: command.commandId,
+      workspaceId: w.id,
+      taskId: task.id,
+      status: "ok",
+      observation: {
+        context: {
+          tabId: "ns",
+          frameId: 0,
+          documentId: "next-document",
+          pageVersion: 1,
+          url: tabs[0].url,
+          title: "Bills",
+          app: "netsuite",
+          workflow: "bill_list",
+          vendor: null,
+          observedAt: new Date().toISOString(),
+          source: "agent",
+        },
+        text: "Bills",
+        elements: [],
+        limitations: [],
+      },
+    });
+    assert.equal((await result).status, "ok");
+    assert.equal(commands.length, count + 1);
+  } finally {
+    manager.close();
+    await new Promise((r) => setTimeout(r, 20));
+    store.close();
+  }
+});

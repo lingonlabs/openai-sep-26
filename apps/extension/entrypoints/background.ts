@@ -1,4 +1,8 @@
-import { BridgeClient, commandError } from "@close/browser";
+import {
+  BridgeClient,
+  commandError,
+  inspectAfterNavigation,
+} from "@close/browser";
 import { supportedApp, type BrowserTab, type Workspace } from "@close/shared";
 const sandbox = "https://11816061-sb1.app.netsuite.com",
   local = "http://127.0.0.1:4318";
@@ -132,7 +136,9 @@ export default defineBackground(() => {
           );
           return;
         }
+        let sourceUrl: string | undefined;
         try {
+          sourceUrl = (await chrome.tabs.get(Number(message.tabId))).url;
           const result = await chrome.tabs.sendMessage(
             Number(message.tabId),
             { type: "close.command", command: message },
@@ -140,6 +146,29 @@ export default defineBackground(() => {
           );
           client?.send(result);
         } catch {
+          const observation = sourceUrl
+            ? await inspectAfterNavigation(message, sourceUrl, {
+                tab: () =>
+                  chrome.tabs.get(Number(message.tabId)).catch(() => null),
+                inspect: (command) =>
+                  chrome.tabs.sendMessage(
+                    Number(message.tabId),
+                    { type: "close.command", command },
+                    { frameId: message.frameId },
+                  ),
+                active: () =>
+                  connected &&
+                  workspace?.id === message.workspaceId &&
+                  !workspace.paused &&
+                  workspace.activeTaskId === message.taskId &&
+                  selected.has(Number(message.tabId)) &&
+                  !workspace.pausedTabIds.includes(message.tabId),
+              }).catch(() => null)
+            : null;
+          if (observation) {
+            client?.send(observation);
+            return;
+          }
           client?.send(
             commandError(
               message,

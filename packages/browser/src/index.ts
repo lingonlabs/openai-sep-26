@@ -46,7 +46,20 @@ export class PageRuntime {
       !el.closest("[data-close-copilot-ui]")
     );
   }
+  private isSearchLabel(label: string) {
+    return (
+      searchLabel.test(label) ||
+      (this.app === "gmail" && /^ask gmail$/i.test(label))
+    );
+  }
   private label(el: HTMLElement) {
+    return this.rawLabel(el)
+      .replace(/\s+/g, " ")
+      .replace(/\s*\*\s*$/, "")
+      .trim()
+      .slice(0, 500);
+  }
+  private rawLabel(el: HTMLElement) {
     const explicit = el.getAttribute("aria-label");
     if (explicit) return explicit.trim();
     const labelled = el
@@ -168,8 +181,9 @@ export class PageRuntime {
       this.version++;
     }
     const vendor =
-      elements.find((e) => /^(vendor|vendor name)\s*\*?$/i.test(e.label))
-        ?.value || null;
+      elements
+        .find((e) => /^(vendor|vendor name)\s*\*?$/i.test(e.label))
+        ?.value?.trim() || null;
     const fixture = this.doc.body?.dataset.workflow;
     const billForm =
       this.app === "netsuite" &&
@@ -180,7 +194,7 @@ export class PageRuntime {
       (billForm
         ? "bill_form"
         : this.app === "gmail"
-          ? elements.some((e) => searchLabel.test(e.label))
+          ? elements.some((e) => this.isSearchLabel(e.label))
             ? "inbox"
             : "message"
           : this.app === "sheets"
@@ -353,6 +367,16 @@ export class PageRuntime {
           );
         if (action.values.currency !== "USD")
           throw new Error("UNSUPPORTED_CURRENCY: Review this bill manually.");
+        const vendorControl = before.elements.find((e) =>
+          /^(vendor|vendor name)$/i.test(e.label),
+        );
+        if (
+          vendorControl?.role === "combobox" &&
+          vendorControl.tag !== "select"
+        )
+          throw new Error(
+            "UNSUPPORTED_VENDOR_SELECTOR: This vendor picker needs application-specific selection and verification. No fields were changed.",
+          );
         const currency = before.elements.find((e) =>
           /^currency$/i.test(e.label),
         );
@@ -501,7 +525,7 @@ export class PageRuntime {
               "ACTION_BLOCKED: Use the reviewed bill-preparation command.",
             );
           if (
-            !searchLabel.test(described.label) ||
+            !this.isSearchLabel(described.label) ||
             described.readOnly ||
             !["input", "textarea", "select"].includes(described.tag)
           )
@@ -516,7 +540,7 @@ export class PageRuntime {
           started = true;
           this.write(element, action.value);
         } else if (action.kind === "key") {
-          if (action.key === "Enter" && !searchLabel.test(described.label))
+          if (action.key === "Enter" && !this.isSearchLabel(described.label))
             throw new Error(
               "ACTION_BLOCKED: Enter is only permitted in search fields.",
             );
@@ -583,6 +607,57 @@ export class PageRuntime {
         this.doc.removeEventListener(type, onHuman, true);
     }
   }
+}
+
+export async function inspectAfterNavigation(
+  command: BrowserCommand,
+  sourceUrl: string,
+  io: {
+    tab: () => Promise<{ url?: string; status?: string } | null>;
+    inspect: (command: BrowserCommand) => Promise<CommandResult>;
+    active: () => boolean;
+  },
+  timeoutMs = 10000,
+): Promise<CommandResult | null> {
+  if (command.action.kind !== "click" || !command.expectedDocumentId)
+    return null;
+  const source = new URL(sourceUrl);
+  if (!["http:", "https:"].includes(source.protocol)) return null;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && io.active()) {
+    const tab = await io.tab();
+    if (!tab?.url || new URL(tab.url).origin !== source.origin) return null;
+    if (tab.status === "complete") {
+      try {
+        const result = await io.inspect({
+          ...command,
+          commandId: crypto.randomUUID(),
+          action: { kind: "inspect" },
+          expectedDocumentId: null,
+          expectedPageVersion: null,
+        });
+        if (!io.active()) return null;
+        if (
+          result.status === "ok" &&
+          result.observation.context.documentId !==
+            command.expectedDocumentId &&
+          result.observation.context.tabId === command.tabId &&
+          result.observation.context.frameId === command.frameId &&
+          new URL(result.observation.context.url).origin === source.origin
+        ) {
+          result.observation.limitations.push(
+            "The click reply was interrupted by navigation. This observation verifies the new document; the click was not repeated.",
+          );
+          return { ...result, commandId: command.commandId };
+        }
+      } catch {
+        // The new document may not have its content script yet. Only reading
+        // is retried; the original click is never issued again.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return null;
 }
 
 export function commandError(

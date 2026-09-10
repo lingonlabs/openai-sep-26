@@ -439,24 +439,32 @@ export function assessInvoices(
         (other.currency !== invoice.currency ||
           other.amount !== invoice.amount),
     );
-    const status = contradictory
+    const placeholderVendor =
+      /^\s*(?:\[.*\]|<.*>|tbd|unknown|vendor name|insert vendor.*|replace.*vendor.*)\s*$/i.test(
+        invoice.vendor,
+      );
+    const status = placeholderVendor
       ? "needs_review"
-      : exact
-        ? "recorded"
-        : similar.length
-          ? "needs_review"
-          : vendor?.status === "pending"
-            ? "vendor_review"
-            : "candidate";
-    const reason = contradictory
-      ? "Invoice evidence disagrees on amount or currency. Resolve the conflicting sources before preparing."
-      : exact
-        ? `Matches ${exact.recordId}: vendor, invoice number, currency, and amount agree.`
-        : similar.length
-          ? "A matching vendor and invoice number has a different amount or currency. Review before preparing."
-          : vendor?.status === "pending"
-            ? "Vendor onboarding is pending. Resolve it before preparing the bill."
-            : "No matching bill was found in the records checked. Review the evidence before preparing.";
+      : contradictory
+        ? "needs_review"
+        : exact
+          ? "recorded"
+          : similar.length
+            ? "needs_review"
+            : vendor?.status === "pending"
+              ? "vendor_review"
+              : "candidate";
+    const reason = placeholderVendor
+      ? "The invoice vendor is a placeholder. Provide the exact existing vendor name before preparing."
+      : contradictory
+        ? "Invoice evidence disagrees on amount or currency. Resolve the conflicting sources before preparing."
+        : exact
+          ? `Matches ${exact.recordId}: vendor, invoice number, currency, and amount agree.`
+          : similar.length
+            ? "A matching vendor and invoice number has a different amount or currency. Review before preparing."
+            : vendor?.status === "pending"
+              ? "Vendor onboarding is pending. Resolve it before preparing the bill."
+              : "No matching bill was found in the records checked. Review the evidence before preparing.";
     return [
       {
         ...invoice,
