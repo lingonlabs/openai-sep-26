@@ -73,15 +73,26 @@ and bounded current observations. It can accept completion, request a concrete
 untried recovery step, or identify a blocker requiring user help. A truthful
 partial answer alone does not establish completion of the requested work.
 
-Recovery continues the same task using persisted SDK history, with up to two
-additional investigator passes. There is a 10-minute limit for the whole requested
-turn, 32 SDK turns per investigator pass, and a 45-second limit for each review.
-Repeated identical recovery plans stop. The UI shows when completion is being
-checked and when another approach is being tried. Incomplete work is marked
-`blocked` with the remaining step; review failure cannot silently mark work complete.
+Recovery continues the same task using persisted SDK history. There is a 10-minute
+limit for the whole requested turn, 32 SDK turns per investigator pass, and a
+45-second limit for each review. Fresh observation evidence resets the stalled
+attempt count; a repeated plan without new evidence, or two consecutive recovery
+passes without new evidence, pauses work. Observation hashes omit snapshot versions;
+the time limit still bounds recovery if unrelated page changes resemble progress.
+The UI distinguishes working, checking completion, waiting for the user, and paused
+work, with an explicit active/idle indicator. Incomplete work retains a structured
+handoff and remaining step; review failure cannot silently mark work complete.
 Stop, scope changes, and disconnect cancel review and continuation too. Ambient
 inspection remains suspended across the entire sequence. Review never grants new
 browser capabilities or expands the user's authorization.
+
+Both the floating popup and chat offer “I've done that — continue” for human
+handoffs and “Continue task” for other pauses, plus a free-text update. Confirmation
+continues the original task/history and requests fresh inspection. Replies during
+execution are acknowledged and queued (up to five), then consumed after the current
+investigator pass or completion review. A queued update takes precedence over the
+review's older conclusion. Stop clears queued updates. The composer follows the
+current task across views; starting another conversation requires New task.
 
 Each assistant response stores its finding IDs. Its Findings section is collapsed
 by default, and earlier attempts that led to recovery are also collapsed. Existing

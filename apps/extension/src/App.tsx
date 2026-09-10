@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowUp, ArrowUpRight, Check, ChevronDown, Circle, CircleCheck, Clock3, ExternalLink, FileText, FolderOpen, Link2, Loader2, Mail, MoreHorizontal, Pause, Play, Plus, Settings2, ShieldCheck, Sparkles, Square, Table2, X } from 'lucide-react';
-import { emptyState, taskProgress, defaultAmbientPreferences, type ExtensionState, type Workspace, type Task, type BrowserTab } from '@ambient/shared';
+import { emptyState, taskStateLabel, defaultAmbientPreferences, type ExtensionState, type Workspace, type Task, type BrowserTab } from '@ambient/shared';
 import { Button } from './components/Button';
 import { Markdown } from './components/Markdown';
 import { ActionCard } from './components/ActionCard';
@@ -52,11 +52,13 @@ function AssistantApp() {
   const [error, setError] = useState(''); const [token, setToken] = useState(''); const [pairing, setPairing] = useState(false);
   const [editing, setEditing] = useState<Workspace | 'new' | null>(null); const [draftName, setDraftName] = useState('September close');
   const [selectedTabs, setSelectedTabs] = useState<number[]>([]); const [saving, setSaving] = useState(false);
-  const [prompt, setPrompt] = useState(''); const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const [prompt, setPrompt] = useState(''), [sending, setSending] = useState(false); const [selectedTask, setSelectedTask] = useState<string | null>(null);
   const [view, setView] = useState<'workspace' | 'activity' | 'help'>(!isExtension && typeof location !== 'undefined' && new URLSearchParams(location.search).get('view') === 'activity' ? 'activity' : !isExtension && typeof location !== 'undefined' && new URLSearchParams(location.search).get('view') === 'help' ? 'help' : 'workspace');
   const active = state.workspaces.find(w => w.id === state.activeWorkspaceId);
   const tasks = state.server.tasks.filter(t => t.workspaceId === active?.id);
-  const task = tasks.find(t => t.id === selectedTask) ?? tasks[0];
+  const runningTask = tasks.find(t => t.id === state.server.runningTaskId);
+  const task = selectedTask === 'new' ? undefined : tasks.find(t => t.id === selectedTask) ?? runningTask ?? [...tasks].sort((a,b) => b.updatedAt-a.updatedAt)[0];
+  const replyTask = runningTask ?? task;
   const suggestion = state.server.suggestions.find(s => s.workspaceId === active?.id);
   const watching = !!active && !active.paused;
   const running = !!state.server.runningTaskId;
@@ -68,7 +70,7 @@ function AssistantApp() {
     if (!isExtension) { setError('This is an interface preview. Load the extension in your demo Chrome profile to use the workspace.'); return; }
     setError('');
     try { const result = await chrome.runtime.sendMessage(message); if (result?.ok === false) throw new Error(result.error); return result; }
-    catch (e) { setError(e instanceof Error ? e.message : 'The extension could not complete that action.'); }
+    catch (e) { const error = e instanceof Error ? e.message : 'The extension could not complete that action.'; setError(error); return { ok: false, error }; }
   }
   useEffect(() => {
     if (!isExtension) return;
@@ -92,10 +94,20 @@ function AssistantApp() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setSaving(false); }
   }
+  async function taskAction(type: 'ui:reply' | 'ui:resume', taskId: string, text?: string) {
+    const result = await dispatch({ type, taskId, prompt: text });
+    if (!result?.ok) throw new Error(result?.error || 'The update could not be sent.');
+    setSelectedTask(taskId); setView('activity');
+  }
   async function start(text: string, taskId?: string) {
-    if (!text.trim()) return;
-    const result = await dispatch({ type: 'ui:start', prompt: text.trim(), taskId });
-    if (result?.ok) { setPrompt(''); setView('activity'); }
+    if (!text.trim() || sending) return;
+    setSending(true);
+    try {
+      if (taskId) await taskAction('ui:reply', taskId, text.trim());
+      else { const result = await dispatch({ type: 'ui:start', prompt: text.trim() }); if (!result?.ok) return; setView('activity'); setSelectedTask(null); }
+      setPrompt('');
+    } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
+    finally { setSending(false); }
   }
   function openSource(url: string) { if (isExtension) void chrome.tabs.create({ url }); else window.open(url, '_blank', 'noopener,noreferrer'); }
 
@@ -118,10 +130,23 @@ function AssistantApp() {
       </> : view === 'help' ? <HelpPanel key={active?.id ?? 'none'} ambient={state.server.ambient} disabled={!isExtension || !active || state.connection !== 'connected'} onSave={preferences => { void dispatch({ type: 'ui:ambient-settings', preferences }); }} onForget={() => { void dispatch({ type: 'ui:ambient-forget' }); }}/> : <>
         <div className="activity-heading"><div><div className="eyebrow">THE WORK, AS IT HAPPENS</div><h1>Close notes.</h1></div>{running && <Button variant="danger" size="small" onClick={() => { void dispatch({ type: 'ui:stop' }); }}><Square size={12}/>Stop</Button>}</div>
         {tasks.length > 1 && <select className="task-select" aria-label="Investigation" value={task?.id ?? ''} onChange={e => setSelectedTask(e.target.value)}>{tasks.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select>}
-        {task ? <TaskView task={task} onOpen={openSource} onPrepare={finding => start(`Prepare the bill for invoice ${finding.invoice} from ${finding.vendor}, amount ${finding.amount}, based on the verified findings. Reinspect sources and the current bill form first. Fill only the matching bill and leave it for human review. Do not save or submit.`, task.id)} canPrepare={available && !running}/> : <section className="quiet-card"><Clock3 size={28} strokeWidth={1.2}/><h2>Your next investigation starts here</h2><p>Accept a suggestion or ask a question about your selected tabs. Findings and sources will appear as the work progresses.</p></section>}
+        {task ? <TaskView task={task} onOpen={openSource} onPrepare={finding => start(`Prepare the bill for invoice ${finding.invoice} from ${finding.vendor}, amount ${finding.amount}, based on the verified findings. Reinspect sources and the current bill form first. Fill only the matching bill and leave it for human review. Do not save or submit.`, task.id)} canPrepare={available && !running} canReply={available && !running} onResume={() => taskAction('ui:resume', task.id)} onReply={text => taskAction('ui:reply', task.id, text)}/> : <section className="quiet-card"><Clock3 size={28} strokeWidth={1.2}/><h2>Your next investigation starts here</h2><p>Accept a suggestion or ask a question about your selected tabs. Findings and sources will appear as the work progresses.</p></section>}
       </>}
     </main>
-    <footer className="composer"><form onSubmit={e => { e.preventDefault(); void start(prompt, view === 'activity' ? task?.id : undefined); }}><textarea aria-label="Ask Ambient" placeholder={running ? 'An investigation is running…' : 'Ask about your workspace…'} value={prompt} onChange={e => setPrompt(e.target.value)} rows={2} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (available && !running) void start(prompt, view === 'activity' ? task?.id : undefined); } }}/><div className="composer-bottom"><span><Sparkles size={12}/> Astra <span className="composer-context">· {view === 'activity' && task ? 'Continue investigation' : 'New investigation'}</span></span><Button size="icon" title="Send request" disabled={!available || running || !prompt.trim()}><ArrowUp size={16}/></Button></div></form><div className="footer-note"><ShieldCheck size={11}/> Selected tabs only <span>•</span> You’re in control</div></footer>
+    <footer className="composer">
+      <div className={'agent-state-bar ' + (replyTask?.status ?? 'idle')} role="status">
+        <span className={running ? 'status-dot green pulse' : 'status-dot'}/>
+        <strong>{sending ? 'Sending your update…' : replyTask ? taskStateLabel(replyTask) : 'No task running'}</strong>
+        <span>{running ? 'Agent active' : 'Agent idle'}</span>
+        {replyTask && <button type="button" onClick={() => { setSelectedTask(replyTask.id); setView('activity'); }}>View task</button>}
+        {running ? <button type="button" onClick={() => { void dispatch({ type: 'ui:stop' }); }}>Stop</button> : <button type="button" onClick={() => { setSelectedTask('new'); setPrompt(''); }}>New task</button>}
+      </div>
+      {!!runningTask?.queuedReplies?.length && <div role="status" className="queued-reply">Update received · will be used after the current step.</div>}
+      <form onSubmit={e => { e.preventDefault(); void start(prompt, replyTask?.id); }}>
+        <textarea aria-label="Ask Ambient" placeholder={running ? 'Add an update while Ambient works…' : replyTask?.handoff?.kind === 'user' ? 'Tell Ambient what you’ve done…' : replyTask ? 'Reply to this investigation…' : 'Ask about your workspace…'} value={prompt} onChange={e => setPrompt(e.target.value)} rows={2} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (available && !sending) void start(prompt, replyTask?.id); } }}/>
+        <div className="composer-bottom"><span><Sparkles size={12}/> Astra <span className="composer-context">· {replyTask ? running ? 'Update active task' : 'Continue this task' : 'New investigation'}</span></span><Button size="icon" title={running ? 'Send update to active task' : 'Send request'} disabled={!available || sending || !prompt.trim()}><ArrowUp size={16}/></Button></div>
+      </form><div className="footer-note"><ShieldCheck size={11}/> {running ? 'Ambient inspection paused during task' : ['watching', 'evaluating'].includes(state.server.ambient?.status ?? '') ? 'Ambient watching for changes' : 'Ambient monitoring paused'} <span>•</span> You’re in control</div>
+    </footer>
     {editing && <div className="modal-backdrop"><section role="dialog" aria-modal="true" aria-label="Choose workspace tabs" className="workspace-modal"><div className="modal-heading"><div><div className="eyebrow">MAKE ROOM FOR THE WORK</div><h2>{editing === 'new' ? 'New workspace' : 'Edit workspace'}</h2></div><Button variant="ghost" size="icon" title="Close workspace editor" onClick={() => setEditing(null)}><X size={18}/></Button></div><label className="field-label" htmlFor="workspace-name">Workspace name</label><input id="workspace-name" value={draftName} maxLength={80} onChange={e => setDraftName(e.target.value)}/><div className="section-header"><span>OPEN TABS · {selectedTabs.length} SELECTED</span></div><div className="tab-choices">{state.tabs.length ? state.tabs.map(tab => { const p = provider(tab); const Icon = p.icon; return <label className="tab-choice" key={tab.id}><input type="checkbox" checked={selectedTabs.includes(tab.id)} onChange={e => setSelectedTabs(e.target.checked ? [...selectedTabs, tab.id] : selectedTabs.filter(id => id !== tab.id))}/><div className={'app-icon ' + p.style}><Icon size={16}/></div><span><strong>{tab.title}</strong><small>{new URL(tab.url).hostname}</small></span></label>; }) : <p className="empty-small">Open your NetSuite sandbox and Gmail in this Chrome profile, then return here.</p>}</div><p className="small-note">Chrome will ask for access to the sites you select. Other tabs stay outside this workspace.</p>{error && <p className="modal-error">{error}</p>}<Button className="full-width" disabled={saving || !selectedTabs.length || !draftName.trim()} onClick={() => { void saveWorkspace(); }}>{saving ? <Loader2 className="spin" size={15}/> : <Check size={15}/>} {editing === 'new' ? 'Start watching' : 'Save workspace'}</Button></section></div>}
   </div>;
 }

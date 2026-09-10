@@ -54,12 +54,14 @@ export const defaultAmbientPreferences = (): AmbientPreferences => ({ enabled: t
 ] });
 export type Suggestion = { id: string; workspaceId: string; tabId: number; version: string; title: string; detail: string; vendor: string; key: string; createdAt: number;
   options?: ActionOption[]; sourceUrl?: string; visitId?: string; instructionId?: string; reason?: string };
+export type TaskHandoff = { kind: 'user' | 'limit' | 'stalled' | 'review_error'; reason: string; nextStep: string };
 export type Task = {
   id: string; workspaceId: string; title: string; status: 'running' | 'completed' | 'blocked' | 'stopped' | 'failed';
   createdAt: number; updatedAt: number; messages: { id?: string; role: 'user' | 'assistant'; text: string; findingIds?: string[]; interim?: boolean }[];
   activity: { id: string; text: string; at: number; status: 'working' | 'done' | 'error'; detail?: string; error?: string }[];
   findings: Finding[]; error?: string; readOnly?: boolean;
   phase?: 'investigating' | 'reviewing'; progress?: string;
+  handoff?: TaskHandoff; queuedReplies?: string[]; runStartedAt?: number;
 };
 export type ServerState = { apiReady: boolean; model: string; tasks: Task[]; suggestions: Suggestion[]; runningTaskId: string | null; ambient?: AmbientStatus };
 export type ExtensionState = {
@@ -77,6 +79,22 @@ export function taskProgress(task: Task): string {
   if (latest.status === 'working') return latest.text;
   if (latest.status === 'error') return 'Reviewing a browser error and deciding how to continue…';
   return `Considering the next step after: ${latest.text}`;
+}
+
+export function taskStateLabel(task: Pick<Task, 'status' | 'phase' | 'handoff'>): string {
+  if (task.status === 'running') return task.phase === 'reviewing' ? 'Checking completion' : 'Working';
+  if (task.status === 'completed') return 'Completed';
+  if (task.status === 'blocked') return task.handoff?.kind === 'user' ? 'Waiting for you' : 'Paused · needs continuation';
+  return task.status === 'stopped' ? 'Stopped' : 'Could not finish';
+}
+
+export type TaskPresence = Pick<Task, 'id' | 'status' | 'phase' | 'handoff' | 'error'> & { queuedReplyCount: number };
+export function taskPresence(task: Task): TaskPresence {
+  return { id: task.id, status: task.status, phase: task.phase, handoff: task.handoff, error: task.error, queuedReplyCount: task.queuedReplies?.length ?? 0 };
+}
+
+export function resumeTaskPrompt(task: Task): string {
+  return `${task.handoff?.kind === 'user' ? 'I have completed the step you requested.' : 'Continue the unfinished task.'} Reinspect the selected tabs and verify the current state before acting. Continue the original request within its existing scope.${task.handoff?.nextStep ? `\nPending step: ${task.handoff.nextStep}` : ''}`;
 }
 
 export function findingsForMessage(task: Task, index: number): { findings: Finding[]; legacy: boolean } {
@@ -99,6 +117,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ambient:settings'), workspaceId: z.string(), preferences: AmbientPreferencesSchema }),
   z.object({ type: z.literal('ambient:forget'), workspaceId: z.string() }),
   z.object({ type: z.literal('start'), workspaceId: z.string(), prompt: z.string().min(1).max(12000), taskId: z.string().optional(), suggestionId: z.string().optional(), readOnly: z.boolean().optional() }),
+  z.object({ type: z.literal('reply'), workspaceId: z.string(), taskId: z.string(), prompt: z.string().trim().min(1).max(12000) }),
+  z.object({ type: z.literal('resume'), workspaceId: z.string(), taskId: z.string() }),
   z.object({ type: z.literal('stop') }),
   z.object({ type: z.literal('result'), id: z.string(), ok: z.boolean(), data: z.unknown().optional(), error: z.string().optional() }),
   z.object({ type: z.literal('ping') }),

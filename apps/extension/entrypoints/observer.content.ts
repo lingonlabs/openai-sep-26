@@ -1,4 +1,4 @@
-import { detectBillForm, isCommitControl, canReplaceValue, withinScope, type BrowserAction, type BrowserObservation, type Suggestion } from '@ambient/shared';
+import { detectBillForm, isCommitControl, canReplaceValue, withinScope, type BrowserAction, type BrowserObservation, type Suggestion, type TaskPresence } from '@ambient/shared';
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Presence, presenceStyles } from '../src/components/Presence';
@@ -14,6 +14,7 @@ export default defineContentScript({
     const documentId = crypto.randomUUID();
     let revision = 0, active = false, paused = false, working = false, taskId: string | null = null;
     let suggestion: Suggestion | null = null, lastContext = '', actionUntil = 0, scope = '';
+    let task: TaskPresence | null = null;
     let refs = new Map<string, { element: HTMLElement; fingerprint: string }>();
     let inspectionVersion = '', inspectedUrl = '', progress = '';
     let ambientEnabled = false, ambientEpoch = 0, baselineNeeded = false, visitId = 'initial';
@@ -33,7 +34,7 @@ export default defineContentScript({
       if (!active) { host.remove(); return; }
       if (!host.isConnected) document.documentElement.append(host);
       host.style.setProperty('--ambient-top', host.style.top || '58vh');
-      root.render(createElement(Presence, { paused, working, monitoring: ambientEnabled, suggestion, progress, error: popupError,
+      root.render(createElement(Presence, { paused, working, monitoring: ambientEnabled, suggestion, task, progress, error: popupError,
         send, onPosition: (top: number) => { host.style.top = top + 'px'; host.style.setProperty('--ambient-top', top + 'px'); },
       }));
     }
@@ -134,7 +135,7 @@ export default defineContentScript({
         if (message.working || message.baseline) baselineNeeded = true;
         if (message.ambientEpoch !== ambientEpoch) lastContext = '';
         ambientEpoch = message.ambientEpoch ?? 0; ambientEnabled = !!message.ambientEnabled;
-        active = message.active; paused = message.paused; working = message.working; taskId = message.taskId; suggestion = message.suggestion; scope = message.scope ?? ''; progress = message.progress ?? ''; popupError = message.error ?? '';
+        active = message.active; paused = message.paused; working = message.working; taskId = message.taskId; task = message.task ?? null; suggestion = message.suggestion; scope = message.scope ?? ''; progress = message.progress ?? ''; popupError = message.error ?? '';
         if (message.top) host.style.top = message.top;
         if (message.reset) lastContext = '';
         render(); setMonitoring(); void observe(); respond({ ok: true });

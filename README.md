@@ -76,9 +76,12 @@ workspace does not control browser tabs and its investigation button is disabled
 - Node/Fastify WebSocket bridge with token pairing and an extension-origin check.
 - Agents SDK with `gpt-6-astra`, browser tools, typed findings, bounded tasks,
   streaming responses, and SQLite persistence.
-- Completion review checks each proposed finish against the request and evidence;
-  up to two distinct recovery passes continue the same history before a concrete
-  blocker is reported. Monitoring stays suspended throughout, with Stop available.
+- Completion review checks each proposed finish against the request and evidence.
+  Recovery continues the same history while making progress, within a ten-minute
+  turn limit. Monitoring stays suspended throughout, with Stop available.
+- Human handoffs have confirmation and free-text continuation controls in both
+  chat and the floating popup. Updates sent during work are acknowledged and queued
+  for the next safe boundary. Active/idle task status stays separate from monitoring.
 - Findings are linked to their producing chat response and collapsed by default.
   Earlier incomplete attempts are retained in collapsed sections.
 - Browser tools: inspect visible page text and controls, click, fill, keyboard

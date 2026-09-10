@@ -1,4 +1,4 @@
-import { ActionSchema, WorkspaceSchema, assertTarget, emptyState, scopeFor, withinScope, taskProgress, type BrowserCommand, type ExtensionState, type ServerMessage, type Workspace } from '@ambient/shared';
+import { ActionSchema, WorkspaceSchema, assertTarget, emptyState, scopeFor, withinScope, taskProgress, taskPresence, type BrowserCommand, type ExtensionState, type ServerMessage, type Workspace } from '@ambient/shared';
 
 export default defineBackground(() => {
   let state: ExtensionState = structuredClone(emptyState);
@@ -40,13 +40,14 @@ export default defineBackground(() => {
   function sync() { send({ type: 'sync', workspaces: state.workspaces, activeWorkspaceId: state.activeWorkspaceId, tabs: state.tabs }); }
   async function broadcast(reset = false, baseline = false) {
     const runningTask = state.server.tasks.find(t => t.id === state.server.runningTaskId);
+    const latestTask = runningTask ?? [...state.server.tasks.filter(t => t.workspaceId === state.activeWorkspaceId)].sort((a,b) => b.updatedAt-a.updatedAt)[0];
     void chrome.runtime.sendMessage({ type: 'state:changed', state }).catch(() => {});
     for (const tab of state.tabs) {
       const workspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
       const member = workspace?.tabs.find(t => t.id === tab.id);
       const active = !!member && withinScope(tab.url, member.scope);
       void chrome.tabs.sendMessage(tab.id, { type: 'presence', active, scope: member?.scope, paused: !!workspace?.paused || !!member?.paused,
-        working: !!state.server.runningTaskId, taskId: state.server.runningTaskId, progress: runningTask ? taskProgress(runningTask) : '', error: state.error,
+        working: !!state.server.runningTaskId, taskId: state.server.runningTaskId, task: latestTask ? taskPresence(latestTask) : null, progress: runningTask ? taskProgress(runningTask) : '', error: state.error,
         ambientEnabled: state.connection === 'connected' && (state.server.ambient?.preferences.enabled ?? false) && (state.server.ambient?.preferences.instructions.some(i => i.enabled) ?? false), ambientEpoch: state.server.ambient?.epoch ?? 0, baseline,
         suggestion: state.server.suggestions.find(s => s.tabId === tab.id && s.workspaceId === workspace?.id) ?? null, top, reset,
       }, { frameId: 0 }).catch(() => {});
@@ -210,6 +211,11 @@ export default defineBackground(() => {
         const chosen = typeof message.text === 'string' && message.text.trim() ? message.text.trim() : s.options?.[Number(message.option)]?.prompt;
         if (!chosen) throw new Error('Choose an option or write what you would like help with.');
         send({ type: 'start', workspaceId: s.workspaceId, suggestionId: s.id, prompt: `${chosen}\n\nContext for this request: ${s.title}. ${s.detail}. Reinspect the selected pages before acting. Leave changes for human review; do not save, submit, or send.` });
+      } else if (message.type === 'ui:reply' || message.type === 'ui:resume') {
+        if (state.connection !== 'connected') throw new Error('Connect to the local server first.');
+        const task = state.server.tasks.find(t => t.id === message.taskId && t.workspaceId === active?.id);
+        if (!task) throw new Error('Select the task’s workspace before replying.');
+        send({ type: message.type === 'ui:resume' ? 'resume' : 'reply', workspaceId: task.workspaceId, taskId: task.id, prompt: message.prompt });
       } else if (message.type === 'ui:start' && fromPanel) {
         if (state.connection !== 'connected') throw new Error('Connect to the local server first.');
         send({ type: 'start', workspaceId: state.activeWorkspaceId, prompt: message.prompt, taskId: message.taskId });

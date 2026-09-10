@@ -5,7 +5,7 @@ Verified on 2026-09-10 with Node 25.6.1 and pnpm 10.30.2.
 | Check | Result |
 | --- | --- |
 | Dependency publication dates | All 699 locked registry versions passed the 14-day minimum-age check, including Markdown, transitive and optional packages. |
-| Automated tests | 36 tests passed, including completion recovery, Stop during review, per-message findings, control freshness, return visits, popup choices, Markdown, and unsafe-content handling. |
+| Automated tests | 40 tests passed, including progress-aware recovery, handoff confirmation, queued updates, Stop during review, per-message findings, control freshness, return visits, popup choices, Markdown, and unsafe-content handling. |
 | Type checking | Shared contracts, server, and extension passed. |
 | Production build | WXT Chrome MV3 build passed. |
 | Live Astra connection | Successful API response using the configured model. |
@@ -135,3 +135,28 @@ also starts collapsed. Legacy unlinked findings remain available once. The backe
 was restarted after confirming there was no active task. Native Gmail message
 opening and the previously incomplete invoice workflow still need live validation
 after reloading the extension. No new dependencies were installed.
+
+## Confirmation, activity state, and continued progress (2026-09-10)
+
+The user reported difficulty confirming a requested PDF step and recognizing idle
+state. Local extension state also confirmed a task had hit the three-pass cap while
+the reviewer identified another investigation step. Recovery now continues with
+fresh evidence within the existing ten-minute limit; repeated plans without evidence
+and consecutive stalled passes still pause. This supersedes the earlier pass cap.
+
+Structured handoffs in chat and the floating popup provide confirmation, Continue
+task, and free-text updates. Replies during execution queue visibly and take
+precedence over stale completion-review conclusions. A persistent status indicator
+separates task activity from ambient watching. Historical blocked tasks receive a
+handoff on load, so the existing conversation can be continued after reload.
+
+All 40 tests, type checks, and production build pass. Regression tests cover five
+investigator passes with new evidence, queued replies during review, persisted
+handoff continuation, cross-workspace reply rejection, and active/idle UI labels.
+The three live Astra completion-review checks with synthetic data also pass.
+The actual popup components were exercised in the isolated localhost preview:
+confirmation continued the same task, working-state updates showed a queue
+acknowledgment, and a paused task exposed its next step and continuation controls.
+These checks did not interact with real accounts. The real PDF and NetSuite
+workflow still needs user-driven continuation after extension reload. No dependencies
+changed.

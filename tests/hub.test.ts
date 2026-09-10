@@ -172,7 +172,8 @@ test('completion recovery is bounded and repeated failed plans are not retried',
     const { hub, store } = await setup(async () => { attempts++; return { text: 'Still incomplete.', history: [] }; }, true, mockAmbient,
       async () => ({ decision: 'continue', reason: 'Missing evidence.', nextStep: repeated ? 'Same failed plan.' : `Distinct approach ${attempts}.` }));
     await hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Investigate.' });
-    assert.equal(attempts, repeated ? 2 : 3); assert.equal(hub.tasks[0].status, 'blocked'); assert.match(hub.tasks[0].error!, /Automatic recovery stopped/);
+    assert.equal(attempts, repeated ? 2 : 3); assert.equal(hub.tasks[0].status, 'blocked'); assert.match(hub.tasks[0].error!, /not producing new evidence/);
+    assert.equal(hub.tasks[0].handoff?.kind, 'stalled');
     hub.ambient.cancel(); store.close();
   }
 });
@@ -181,7 +182,8 @@ test('a genuine blocker asks for a specific next step and persists it for follow
   const { hub, store } = await setup(async () => ({ text: 'The mailbox is logged out.', history: [] }), true, mockAmbient,
     async () => ({ decision: 'blocked', reason: 'The selected mailbox needs sign-in.', nextStep: 'Please sign in to the selected Gmail tab, then tell me to continue.' }));
   await hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Inspect the mailbox.', readOnly: true });
-  assert.equal(hub.tasks[0].status, 'blocked'); assert.match(hub.tasks[0].messages.at(-1)!.text, /Next step needed/);
+  assert.equal(hub.tasks[0].status, 'blocked'); assert.match(hub.tasks[0].messages.at(-1)!.text, /Waiting for you/);
+  assert.equal(hub.tasks[0].handoff?.kind, 'user');
   assert.match(JSON.stringify(store.get(`history:${hub.tasks[0].id}`, [])), /sign in/);
   await hub.receive({ type: 'start', workspaceId: 'close', taskId: hub.tasks[0].id, prompt: 'Continue.' });
   assert.equal(hub.tasks[0].readOnly, true);
@@ -194,5 +196,59 @@ test('review failure retains the result but cannot silently mark unfinished work
   await hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Investigate.' });
   assert.equal(hub.tasks[0].status, 'blocked'); assert.match(hub.tasks[0].error!, /Review unavailable/);
   assert.equal(hub.tasks[0].messages.at(-1)!.text, 'Partial evidence retained.');
+  hub.ambient.cancel(); store.close();
+});
+
+test('fresh evidence permits continued work beyond three attempts, including a repeated search plan', async () => {
+  let attempts = 0;
+  const { hub, store } = await setup(async request => {
+    attempts++; await request.browser(action(1)); return { text: 'Search progress.', history: [] };
+  }, true, mockAmbient, async () => attempts < 5
+    ? { decision: 'continue', reason: 'Another search result remains to inspect.', nextStep: 'Inspect the next search result.' }
+    : { decision: 'complete', reason: 'The requested evidence is verified.', nextStep: '' });
+  hub.send = message => { if (message.type === 'command') queueMicrotask(() => { void hub.receive({ type: 'result', id: message.id, ok: true,
+    data: { url: tabs[0].url, title: 'Result', version: String(attempts), text: `Distinct result ${attempts}`, elements: [] } }); }); };
+  await hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Verify these records.' });
+  assert.equal(attempts, 5); assert.equal(hub.tasks[0].status, 'completed'); assert.equal(hub.tasks[0].handoff, undefined);
+  hub.ambient.cancel(); store.close();
+});
+
+test('an update sent during review is acknowledged and continues the same task before applying a stale blocker', async () => {
+  let attempts = 0, reviews = 0, finish!: () => void, entered!: () => void;
+  const reviewing = new Promise<void>(resolve => { entered = resolve; });
+  const { hub, store } = await setup(async request => {
+    attempts++;
+    if (attempts === 2) { assert.equal(request.prompt, 'I opened the PDF in Gmail.'); assert.equal(request.history.length, 1); }
+    return { text: attempts === 1 ? 'Please open the PDF.' : 'PDF evidence verified.', history: [{ role: 'assistant', content: 'Evidence so far.' }] };
+  }, true, mockAmbient, async () => {
+    reviews++;
+    if (reviews === 1) return new Promise(resolve => { finish = () => resolve({ decision: 'blocked', reason: 'PDF was not open.', nextStep: 'Open the PDF.' }); entered(); });
+    return { decision: 'complete', reason: 'The evidence is verified.', nextStep: '' };
+  });
+  const run = hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Read the PDF.' }); await reviewing;
+  const id = hub.tasks[0].id;
+  await hub.receive({ type: 'reply', workspaceId: 'close', taskId: id, prompt: 'I opened the PDF in Gmail.' });
+  assert.deepEqual(hub.tasks[0].queuedReplies, ['I opened the PDF in Gmail.']); assert.equal(attempts, 1);
+  finish(); await run;
+  assert.equal(hub.tasks.length, 1); assert.equal(hub.tasks[0].id, id); assert.equal(hub.tasks[0].status, 'completed');
+  assert.equal(hub.tasks[0].queuedReplies?.length, 0);
+  assert.ok(hub.tasks[0].messages.some(m => m.role === 'user' && m.text === 'I opened the PDF in Gmail.'));
+  hub.ambient.cancel(); store.close();
+});
+
+test('confirmation resumes a persisted user handoff and task replies cannot cross workspaces', async () => {
+  let attempts = 0;
+  const { hub, store } = await setup(async request => {
+    attempts++; if (attempts === 2) { assert.match(request.prompt, /I have completed the step/); assert.match(request.prompt, /Reinspect/); }
+    return { text: 'PDF review.', history: [] };
+  }, true, mockAmbient, async () => attempts === 1
+    ? { decision: 'blocked', reason: 'The PDF needs to be opened.', nextStep: 'Open the PDF in the selected Gmail tab.' }
+    : { decision: 'complete', reason: 'PDF is now verified.', nextStep: '' });
+  await hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Verify the PDF.' });
+  const id = hub.tasks[0].id;
+  assert.equal(store.tasks()[0].handoff?.kind, 'user');
+  await assert.rejects(hub.receive({ type: 'reply', taskId: id, workspaceId: 'other', prompt: 'Done.' }), /workspace/);
+  await hub.receive({ type: 'resume', taskId: id, workspaceId: 'close' });
+  assert.equal(attempts, 2); assert.equal(hub.tasks[0].id, id); assert.equal(hub.tasks[0].status, 'completed');
   hub.ambient.cancel(); store.close();
 });
