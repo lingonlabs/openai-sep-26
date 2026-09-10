@@ -87,6 +87,10 @@ workspace does not control browser tabs and its investigation button is disabled
   for the next safe boundary. Active/idle task status stays separate from monitoring.
 - Findings are linked to their producing chat response and collapsed by default.
   Earlier incomplete attempts are retained in collapsed sections.
+- Follow agent beside the composer brings execution tabs forward (on by default,
+  saved locally); ambient screenshots never switch focus. Sheets' inspected name
+  box accepts a single cell address for navigation, and inspection includes visible
+  formula-bar text. Screenshot fallback remains available for canvas content.
 - Browser tools: inspect visible page text and controls, click, fill, keyboard
   input for search, scroll, scoped navigation, and debugger screenshots.
 - Successful task histories can continue; workspace memory contains summaries.

@@ -68,6 +68,7 @@ export type ServerState = { apiReady: boolean; model: string; tasks: Task[]; sug
 export type ExtensionState = {
   workspaces: Workspace[]; activeWorkspaceId: string | null; tabs: BrowserTab[];
   connection: 'offline' | 'connecting' | 'connected'; server: ServerState; error: string | null;
+  followAgent?: boolean;
 };
 export const emptyServer: ServerState = { apiReady: false, model: 'gpt-6-astra', tasks: [], suggestions: [], runningTaskId: null };
 export const emptyState: ExtensionState = { workspaces: [], activeWorkspaceId: null, tabs: [], connection: 'offline', server: emptyServer, error: null };

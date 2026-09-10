@@ -2,7 +2,7 @@ import { detectBillForm, isCommitControl, canReplaceValue, withinScope, type Bro
 import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Presence, presenceStyles } from '../src/components/Presence';
-import { assertFreshTarget, targetFingerprint, isSearchField } from '../src/browser-target';
+import { assertFreshTarget, targetFingerprint, isSearchField, isSheetNameBox, isCellAddress } from '../src/browser-target';
 
 export default defineContentScript({
   // No automatic matches or broad host grants: the background injects after selection.
@@ -30,7 +30,13 @@ export default defineContentScript({
     const style = document.createElement('style'); style.textContent = presenceStyles; shadow.append(style);
     const container = document.createElement('div'); shadow.append(container);
     const root = createRoot(container);
-    function send(message: unknown) { return chrome.runtime.sendMessage(message); }
+    async function send(message: unknown) {
+      try { return await chrome.runtime.sendMessage(message); }
+      catch (error) {
+        if (/context invalidated/i.test(String(error))) { active = false; setMonitoring(); host.remove(); }
+        throw error;
+      }
+    }
     function render() {
       if (!active) { host.remove(); return; }
       if (!host.isConnected) document.documentElement.append(host);
@@ -48,11 +54,15 @@ export default defineContentScript({
       for (const e of document.querySelectorAll<HTMLElement>(controls + messageRows)) {
         if (!visible(e) || own(e) || (e as HTMLInputElement).type === 'password' || (e as HTMLInputElement).type === 'hidden') continue;
         const ref = `e${elements.length + 1}`; const text = label(e); refs.set(ref, { element: e, fingerprint: targetFingerprint(e, text) });
-        elements.push({ ref, tag: e.tagName.toLowerCase(), role: isSearchField(e, text, location.hostname) ? 'searchbox' : e.getAttribute('role') || '', label: text, value: 'value' in e ? String(e.value).slice(0, 500) : undefined, inputType: e.getAttribute('type') || undefined });
+        elements.push({ ref, tag: e.tagName.toLowerCase(), role: isSheetNameBox(e, location.href) ? 'cell-selector' : isSearchField(e, text, location.hostname) ? 'searchbox' : e.getAttribute('role') || '', label: text, value: 'value' in e ? String(e.value).slice(0, 500) : undefined, inputType: e.getAttribute('type') || undefined });
         if (elements.length >= 180) break;
       }
       revision++; inspectionVersion = version(); inspectedUrl = location.href;
-      return { url: location.href, title: document.title, version: inspectionVersion, text: document.body.innerText.slice(0, 24000), elements };
+      const formula = location.hostname === 'docs.google.com' && location.pathname.startsWith('/spreadsheets/')
+        ? document.querySelector<HTMLElement>('#t-formula-bar-input,[role="textbox"][aria-label="Formula bar"]') : null;
+      const selectedCell = elements.find(e => e.role === 'cell-selector')?.value;
+      const formulaText = formula && visible(formula) ? ('value' in formula ? String(formula.value) : formula.innerText || formula.textContent || '').slice(0, 6000) : '';
+      return { url: location.href, title: document.title, version: inspectionVersion, text: `${formulaText ? `Selected cell ${selectedCell ?? 'unknown'} — formula bar: ${formulaText}\n` : ''}${document.body.innerText.slice(0, 23000)}`, elements };
     }
     async function execute(action: BrowserAction): Promise<BrowserObservation> {
       if (!active || paused) throw new Error('Tab is not actively watched.');
@@ -74,7 +84,9 @@ export default defineContentScript({
       if (action.action === 'click') element.click();
       else if (action.action === 'fill') {
         const current = 'value' in element ? String(element.value) : element.textContent ?? '';
-        if (!canReplaceValue(isSearchField(element, targetLabel, location.hostname) ? 'Search' : targetLabel, current, action.text ?? '')) throw new Error('This field already contains a value. Leave existing user input for human review.');
+        const cellSelector = isSheetNameBox(element, location.href);
+        if (cellSelector && !isCellAddress(action.text ?? '')) throw new Error('The Sheets name box only accepts one cell address, such as A6.');
+        if (!cellSelector && !canReplaceValue(isSearchField(element, targetLabel, location.hostname) ? 'Search' : targetLabel, current, action.text ?? '')) throw new Error('This field already contains a value. Leave existing user input for human review.');
         if (element instanceof HTMLSelectElement) {
           const option = [...element.options].find(o => o.value === action.text || o.text === action.text);
           if (!option) throw new Error('No matching select option.'); element.value = option.value;
@@ -87,7 +99,8 @@ export default defineContentScript({
       } else if (action.action === 'press') {
         const key = action.text?.toUpperCase();
         if (!['ENTER', 'TAB', 'ESCAPE'].includes(key ?? '')) throw new Error('Supported keys are ENTER, TAB and ESCAPE.');
-        if (key === 'ENTER' && !isSearchField(element, targetLabel, location.hostname)) throw new Error('Enter is only permitted in a search field. Use the human review step for forms.');
+        const cellSelector = isSheetNameBox(element, location.href) && isCellAddress((element as HTMLInputElement).value ?? '');
+        if (key === 'ENTER' && !cellSelector && !isSearchField(element, targetLabel, location.hostname)) throw new Error('Enter is only permitted in search or the Sheets cell selector. Use the human review step for forms.');
         element.focus();
         // Native keyboard dispatch is done by the background after this validation.
         return { ...inspect(), text: '[KEY_TARGET_VALIDATED]\n' + document.body.innerText.slice(0, 24000) };

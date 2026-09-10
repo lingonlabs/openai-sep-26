@@ -236,7 +236,7 @@ export class Hub {
       }
       this.store.set(`memory:${workspace.id}`, [...this.store.get<string[]>(`memory:${workspace.id}`, []), `${task.status}: ${assistantMessage.text.slice(0, 3500)} ${task.error ?? ''}`.slice(0,4000)].slice(-8));
       if (task.status === 'blocked') this.store.set(`history:${task.id}`, [...this.store.get<AgentInputItem[]>(`history:${task.id}`, []),
-        { role: 'assistant', content: `Completion check: ${task.error ?? ''}\n${reviews.at(-1)?.nextStep ?? ''}` }]);
+        { role: 'assistant', content: [{ type: 'output_text', text: `Completion check: ${task.error ?? ''}\n${reviews.at(-1)?.nextStep ?? ''}` }] }]);
     } catch (error) {
       task.status = controller.signal.aborted ? 'stopped' : 'failed';
       task.error = controller.signal.aborted ? task.error : error instanceof Error ? error.message : 'Investigation failed.';

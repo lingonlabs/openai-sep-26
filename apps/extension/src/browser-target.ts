@@ -1,5 +1,12 @@
 // Validate the inspected control, rather than unrelated page-wide mutations.
 // Keep the DOM node reference: a visually identical replacement still requires inspection.
+export function isSheetNameBox(element: HTMLElement, url: string): boolean {
+  const page = new URL(url);
+  return page.hostname === 'docs.google.com' && page.pathname.startsWith('/spreadsheets/') && element.tagName === 'INPUT'
+    && (element.getAttribute('id') === 't-name-box' || /^name box$/i.test(element.getAttribute('aria-label') ?? ''));
+}
+export function isCellAddress(value: string): boolean { return /^\$?[A-Z]{1,3}\$?[1-9][0-9]{0,6}$/i.test(value); }
+
 export function isSearchField(element: HTMLElement, label: string, hostname: string): boolean {
   if (!['INPUT', 'TEXTAREA'].includes(element.tagName) && !element.isContentEditable) return false;
   return element.getAttribute('type') === 'search' || element.getAttribute('role') === 'searchbox'

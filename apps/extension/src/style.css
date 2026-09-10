@@ -1,4 +1,5 @@
 @import "tailwindcss";
+.follow-agent{display:flex;align-items:center;justify-content:flex-end;gap:7px;font-size:11px;color:#64808a;margin:0 0 8px;cursor:pointer}.follow-agent input{accent-color:#269b96}
 
 /* Brand values sampled from https://lingonlabs.com, 10 September 2026. */
 @font-face{font-family:"Lingon Inter";src:url('./assets/inter-latin.woff2') format('woff2');font-style:normal;font-weight:100 900;font-display:swap}

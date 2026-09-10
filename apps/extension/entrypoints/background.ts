@@ -20,7 +20,8 @@ export default defineBackground(() => {
     void ready.then(persist);
   });
   const ready = (async () => {
-    const local = await chrome.storage.local.get(['workspaces', 'activeWorkspaceId', 'pairingToken', 'clientId', 'presenceTop']);
+    const local = await chrome.storage.local.get(['workspaces', 'activeWorkspaceId', 'pairingToken', 'clientId', 'presenceTop', 'followAgent']);
+    state.followAgent = typeof local.followAgent === 'boolean' ? local.followAgent : true;
     const stored = WorkspaceSchema.array().safeParse(local.workspaces);
     state.workspaces = stored.success ? stored.data : [];
     if (browserRestarted) {
@@ -146,6 +147,13 @@ export default defineBackground(() => {
       const workspace = state.workspaces.find(w => w.id === command.workspaceId);
       assertTarget(workspace, state.activeWorkspaceId, { id: args.tabId, title: actualTab.title ?? '', url: actualTab.url ?? '' });
       const member = workspace!.tabs.find(t => t.id === args.tabId)!;
+      if (state.followAgent) {
+        if (!actualTab.active) await chrome.tabs.update(args.tabId, { active: true });
+        await chrome.windows.update(actualTab.windowId, { focused: true });
+        if (cancelled.has(command.taskId) || state.server.runningTaskId !== command.taskId) throw new Error('Task stopped while following its tab.');
+        const focusedTab = await chrome.tabs.get(args.tabId);
+        assertTarget(state.workspaces.find(w => w.id === command.workspaceId), state.activeWorkspaceId, { id: args.tabId, title: focusedTab.title ?? '', url: focusedTab.url ?? '' });
+      }
       if (args.action === 'navigate') {
         if (!args.url || !withinScope(args.url, member.scope)) throw new Error('Navigation leaves this tab’s selected scope.');
         // Do not navigate away from a filled form to research elsewhere.
@@ -216,6 +224,10 @@ export default defineBackground(() => {
       const active = state.workspaces.find(w => w.id === state.activeWorkspaceId);
       const pageMember = sender.tab?.id && active?.tabs.find(t => t.id === sender.tab!.id && withinScope(sender.url ?? '', t.scope));
       if (!fromPanel && !pageMember) throw new Error('This page is not selected in the workspace.');
+      if (message.type === 'ui:follow-agent' && fromPanel) {
+        state.followAgent = !!message.enabled; await chrome.storage.local.set({ followAgent: state.followAgent });
+        await broadcast(); return { ok: true };
+      }
       if (message.type === 'panel:tab') { await chrome.tabs.create({ url: chrome.runtime.getURL('sidepanel.html') }); return { ok: true }; }
       if (message.type === 'ui:save' && fromPanel) {
         const name = String(message.name).trim().slice(0, 80); if (!name) throw new Error('Give the workspace a name.');

@@ -5,7 +5,7 @@ Verified on 2026-09-10 with Node 25.6.1 and pnpm 10.30.2.
 | Check | Result |
 | --- | --- |
 | Dependency publication dates | All 699 locked registry versions passed the 14-day minimum-age check, including Markdown, transitive and optional packages. |
-| Automated tests | 42 tests passed, including visual-only changes and persisted image baselines, progress-aware recovery, handoff confirmation, queued updates, Stop during review, per-message findings, control freshness, return visits, popup choices, Markdown, and unsafe-content handling. |
+| Automated tests | 44 tests passed, including SDK continuation history normalization, scoped Sheets cell navigation, visual-only changes and persisted image baselines, progress-aware recovery, handoff confirmation, queued updates, Stop during review, per-message findings, control freshness, return visits, popup choices, Markdown, and unsafe-content handling. |
 | Type checking | Shared contracts, server, and extension passed. |
 | Production build | WXT Chrome MV3 build passed. |
 | Live Astra connection | Successful API response using the configured model. |

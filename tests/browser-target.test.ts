@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertFreshTarget, targetFingerprint, isSearchField } from '../apps/extension/src/browser-target.js';
+import { assertFreshTarget, targetFingerprint, isSearchField, isSheetNameBox, isCellAddress } from '../apps/extension/src/browser-target.js';
+
+test('Sheets navigation is limited to the real name box and a single cell address', () => {
+  const attributes: Record<string, string> = { id: 't-name-box' };
+  const field = { tagName: 'INPUT', getAttribute: (name: string) => attributes[name] ?? null } as unknown as HTMLElement;
+  assert.equal(isSheetNameBox(field, 'https://docs.google.com/spreadsheets/d/demo/edit'), true);
+  assert.equal(isSheetNameBox(field, 'https://example.com/spreadsheets/d/demo/edit'), false);
+  assert.equal(isSheetNameBox(field, 'https://docs.google.com/document/d/demo/edit'), false);
+  attributes.id = 't-formula-bar-input';
+  assert.equal(isSheetNameBox(field, 'https://docs.google.com/spreadsheets/d/demo/edit'), false);
+  for (const address of ['A6', 'C6', '$AB$123']) assert.equal(isCellAddress(address), true);
+  for (const value of ['Vendor name', '=SUM(A1:A6)', 'A0', 'A6:C6', 'A6\nC6']) assert.equal(isCellAddress(value), false);
+});
 
 test('unrelated page updates do not invalidate an unchanged inspected search field', () => {
   const attributes: Record<string, string> = { type: 'text', name: 'q', 'aria-label': 'Search mail' };
