@@ -13,6 +13,7 @@ Verified on 2026-09-10 with Node 25.6.1 and pnpm 10.30.2.
 | Interface preview | Visually checked; 390px viewport checked for horizontal overflow. Preview is labeled and cannot control tabs. |
 | Extension pairing and workspace | User loaded the unpacked extension, paired it, and selected the NetSuite sandbox in a workspace. |
 | Real NetSuite inspection | Completed one agent-requested inspect action through the paired extension. Astra identified the Home dashboard and its navigation/form controls. No click, fill, navigation, or save was requested or performed. |
+| Real ambient suggestion | After the rebuild/reload instructions, the user opened Add New Bill in NetSuite and confirmed that the floating suggestion appeared. |
 
 The real test used the local development control endpoint to start a task in the
 same Hub/Agents SDK workflow used by the side panel. The browser observation came
@@ -21,8 +22,7 @@ connector was used. Account content and credentials are excluded from this recor
 
 ## Next real-account checks
 
-- Reload the extension after the latest build to pick up observer reinjection fixes.
-- Open Add New Bill; verify detection, floating suggestion, dismissal, and pause.
+- Verify dismissal and pause on the real bill page; detection and the floating suggestion are user-confirmed.
 - Select demo Gmail and accept an investigation; verify search and invoice reading.
 - Compare invoice evidence with NetSuite, including duplicate and uncertain matches.
 - Include the vendor Sheet if desired and test its actual representation.
