@@ -1,4 +1,4 @@
-# Ambient · Close companion
+# Lingon Labs · Close companion
 
 A local Chrome extension prototype for ambient finance work. A persistent Astra
 companion interprets changes in selected tabs using your standing instructions,
@@ -206,3 +206,7 @@ Planning documents live on `coordination`, in the sibling `openai-sep-26-coord`
 worktree. Read its `COORDINATION.md` at handoff time. Do not merge the coordination
 branch into code branches. Never commit `.env`, pairing tokens, SQLite files, or
 real-account observations.
+
+## Lingon Labs styling and team handoff
+
+The brand assets are bundled locally. See [the design preview and handoff guide](docs/LINGON-PREVIEW.md) for the reviewed upstream version, clean-checkout validation, preview links, and rebuild/reload steps for Philipp.
