@@ -1,4 +1,4 @@
-import { ActionSchema, WorkspaceSchema, assertTarget, emptyState, scopeFor, withinScope, type BrowserCommand, type ExtensionState, type ServerMessage, type Workspace } from '@ambient/shared';
+import { ActionSchema, WorkspaceSchema, assertTarget, emptyState, scopeFor, withinScope, taskProgress, type BrowserCommand, type ExtensionState, type ServerMessage, type Workspace } from '@ambient/shared';
 
 export default defineBackground(() => {
   let state: ExtensionState = structuredClone(emptyState);
@@ -9,14 +9,21 @@ export default defineBackground(() => {
   const attached = new Set<number>();
   const injecting = new Set<number>();
   let commandQueue = Promise.resolve();
+  let browserRestarted = false;
+  // storage.session also clears on an unpacked extension reload. Use the actual
+  // browser-start event to invalidate tab IDs; preserve selections on code reload.
+  chrome.runtime.onStartup.addListener(() => {
+    browserRestarted = true;
+    state.workspaces = state.workspaces.map(w => ({ ...w, tabs: [], paused: true }));
+    sync(); void broadcast();
+    void ready.then(persist);
+  });
   const ready = (async () => {
     const local = await chrome.storage.local.get(['workspaces', 'activeWorkspaceId', 'pairingToken', 'clientId', 'presenceTop']);
-    const session = await chrome.storage.session.get('ambientSession');
     const stored = WorkspaceSchema.array().safeParse(local.workspaces);
     state.workspaces = stored.success ? stored.data : [];
-    if (!session.ambientSession) {
+    if (browserRestarted) {
       state.workspaces = state.workspaces.map(w => ({ ...w, tabs: [], paused: true }));
-      await chrome.storage.session.set({ ambientSession: crypto.randomUUID() });
     }
     state.activeWorkspaceId = typeof local.activeWorkspaceId === 'string' ? local.activeWorkspaceId : null;
     token = typeof local.pairingToken === 'string' ? local.pairingToken : '';
@@ -24,6 +31,7 @@ export default defineBackground(() => {
     top = typeof local.presenceTop === 'string' ? local.presenceTop : '58%';
     await chrome.storage.local.set({ clientId });
     await refreshTabs();
+    await inject();
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
     chrome.alarms.create('ambient-connect', { periodInMinutes: .5 });
     if (token) connect();
@@ -31,13 +39,14 @@ export default defineBackground(() => {
   function send(message: unknown) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
   function sync() { send({ type: 'sync', workspaces: state.workspaces, activeWorkspaceId: state.activeWorkspaceId, tabs: state.tabs }); }
   async function broadcast(reset = false) {
+    const runningTask = state.server.tasks.find(t => t.id === state.server.runningTaskId);
     void chrome.runtime.sendMessage({ type: 'state:changed', state }).catch(() => {});
     for (const tab of state.tabs) {
       const workspace = state.workspaces.find(w => w.id === state.activeWorkspaceId);
       const member = workspace?.tabs.find(t => t.id === tab.id);
       const active = !!member && withinScope(tab.url, member.scope);
       void chrome.tabs.sendMessage(tab.id, { type: 'presence', active, scope: member?.scope, paused: !!workspace?.paused || !!member?.paused,
-        working: !!state.server.runningTaskId, taskId: state.server.runningTaskId,
+        working: !!state.server.runningTaskId, taskId: state.server.runningTaskId, progress: runningTask ? taskProgress(runningTask) : '',
         suggestion: state.server.suggestions.find(s => s.tabId === tab.id && s.workspaceId === workspace?.id) ?? null, top, reset,
       }, { frameId: 0 }).catch(() => {});
     }
@@ -76,8 +85,9 @@ export default defineBackground(() => {
     ws.onmessage = event => {
       let message: ServerMessage; try { message = JSON.parse(event.data); } catch { return; }
       if (message.type === 'state') {
+        const justConnected = state.connection !== 'connected';
         if (message.state.runningTaskId && message.state.runningTaskId !== state.server.runningTaskId) cancelled.delete(message.state.runningTaskId);
-        state.connection = 'connected'; state.error = null; state.server = message.state; void broadcast();
+        state.connection = 'connected'; state.error = null; state.server = message.state; void broadcast(justConnected);
       }
       else if (message.type === 'error') { state.error = message.message; void broadcast(); }
       else if (message.type === 'cancel') { cancelled.add(message.taskId); }
@@ -147,6 +157,9 @@ export default defineBackground(() => {
     const fromPanel = !sender.tab && sender.url?.startsWith(chrome.runtime.getURL(''));
     // Opening the side panel must happen in direct response to the user's click.
     if (message.type === 'panel:open' && sender.tab?.id) { void chrome.sidePanel.open({ tabId: sender.tab.id }).then(() => respond({ ok: true }), error => respond({ ok: false, error: String(error) })); return true; }
+    // Preserve the click's user gesture so accepting the floating suggestion also
+    // opens the panel where the live activity is visible.
+    if (message.type === 'ui:accept' && sender.tab?.id) void chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => {});
     void ready.then(async () => {
       if (message.type === 'page:ready') { await broadcast(true); return { ok: true }; }
       if (message.type === 'page:context' && sender.tab?.id) {

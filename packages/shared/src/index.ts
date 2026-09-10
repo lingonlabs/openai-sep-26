@@ -9,7 +9,7 @@ export const WorkspaceSchema = z.object({
 export type Workspace = z.infer<typeof WorkspaceSchema>;
 export const ContextSchema = z.object({
   tabId: z.number().int(), url: z.string(), title: z.string(), version: z.string(),
-  kind: z.enum(['bill_form', 'page']), vendor: z.string().max(300), observedAt: z.number(),
+  kind: z.enum(['bill_form', 'page']), vendor: z.string().max(300), observedAt: z.number(), visitId: z.string().optional(),
 });
 export type PageContext = z.infer<typeof ContextSchema>;
 export const ActionSchema = z.object({
@@ -39,7 +39,7 @@ export type Suggestion = { id: string; workspaceId: string; tabId: number; versi
 export type Task = {
   id: string; workspaceId: string; title: string; status: 'running' | 'completed' | 'stopped' | 'failed';
   createdAt: number; updatedAt: number; messages: { role: 'user' | 'assistant'; text: string }[];
-  activity: { id: string; text: string; at: number; status: 'working' | 'done' | 'error' }[];
+  activity: { id: string; text: string; at: number; status: 'working' | 'done' | 'error'; detail?: string; error?: string }[];
   findings: Finding[]; error?: string; readOnly?: boolean;
 };
 export type ServerState = { apiReady: boolean; model: string; tasks: Task[]; suggestions: Suggestion[]; runningTaskId: string | null };
@@ -49,6 +49,15 @@ export type ExtensionState = {
 };
 export const emptyServer: ServerState = { apiReady: false, model: 'gpt-6-astra', tasks: [], suggestions: [], runningTaskId: null };
 export const emptyState: ExtensionState = { workspaces: [], activeWorkspaceId: null, tabs: [], connection: 'offline', server: emptyServer, error: null };
+
+export function taskProgress(task: Task): string {
+  const latest = task.activity.at(-1);
+  if (task.status !== 'running') return task.status === 'completed' ? 'Investigation finished' : task.error || 'Investigation stopped';
+  if (!latest) return 'Starting the investigation…';
+  if (latest.status === 'working') return latest.text;
+  if (latest.status === 'error') return 'Reviewing a browser error and deciding how to continue…';
+  return `Considering the next step after: ${latest.text}`;
+}
 
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('hello'), token: z.string(), clientId: z.string() }),

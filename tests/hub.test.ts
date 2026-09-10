@@ -75,3 +75,29 @@ test('read-only tasks cannot click even if the model requests it', async () => {
   await hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Inspect only.', readOnly: true });
   assert.equal(dispatched, false); assert.equal(hub.tasks[0].status, 'completed'); store.close();
 });
+
+test('accepted or dismissed suggestions stay quiet on this bill visit and return on a new visit', async () => {
+  const { hub, store } = await setup(async () => ({ text: 'done', history: [] }));
+  hub.observe({ ...context, visitId: 'document-1' });
+  await hub.receive({ type: 'start', workspaceId: 'close', suggestionId: hub.suggestions[0].id, prompt: 'Check.' });
+  hub.observe({ ...context, visitId: 'document-1', version: 'updated-dom' });
+  assert.equal(hub.suggestions.length, 0);
+  hub.observe({ ...context, visitId: 'document-2' });
+  assert.equal(hub.suggestions.length, 1);
+  await hub.receive({ type: 'dismiss', id: hub.suggestions[0].id });
+  hub.observe({ ...context, visitId: 'document-2' }); assert.equal(hub.suggestions.length, 0);
+  hub.observe({ ...context, visitId: 'document-2', kind: 'page' });
+  hub.observe({ ...context, visitId: 'document-2' }); assert.equal(hub.suggestions.length, 1);
+  store.close();
+});
+
+test('browser failure details survive completion and persistence', async () => {
+  const { hub, store } = await setup(async r => {
+    await assert.rejects(r.browser(action(2)), /Target changed/);
+    return { text: 'Search could not be completed.', history: [] };
+  });
+  hub.send = m => { if (m.type === 'command') queueMicrotask(() => { void hub.receive({ type: 'result', id: m.id, ok: false, error: 'Target changed since inspection.' }); }); };
+  await hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Check.' });
+  assert.equal(store.tasks()[0].activity[0].error, 'Target changed since inspection.');
+  assert.equal(store.tasks()[0].activity[0].status, 'error'); store.close();
+});

@@ -7,7 +7,7 @@
     "dev:extension": "pnpm --filter @ambient/extension dev",
     "build": "pnpm --filter @ambient/extension build",
     "typecheck": "pnpm -r typecheck",
-    "test": "node --import tsx --test tests/*.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts apps/extension/tests/*.test.ts",
     "smoke": "node --import tsx --env-file-if-exists=.env apps/server/src/smoke.ts",
     "check:ages": "node scripts/check-release-ages.mjs"
   },

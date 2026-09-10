@@ -1,4 +1,5 @@
 import { detectBillForm, isCommitControl, canReplaceValue, withinScope, type BrowserAction, type BrowserObservation, type Suggestion } from '@ambient/shared';
+import { assertFreshTarget, targetFingerprint, isSearchField } from '../src/browser-target';
 
 export default defineContentScript({
   // No automatic matches or broad host grants: the background injects after selection.
@@ -10,8 +11,8 @@ export default defineContentScript({
     const documentId = crypto.randomUUID();
     let revision = 0, active = false, paused = false, working = false, taskId: string | null = null;
     let suggestion: Suggestion | null = null, lastContext = '', actionUntil = 0, scope = '';
-    let refs = new Map<string, { element: HTMLElement; label: string }>();
-    let inspectionVersion = '';
+    let refs = new Map<string, { element: HTMLElement; fingerprint: string }>();
+    let inspectionVersion = '', inspectedUrl = '', progress = '';
     const host = document.createElement('div'); host.id = 'ambient-close-presence';
     const shadow = host.attachShadow({ mode: 'closed' });
     const version = () => `${documentId}:${revision}:${location.href}`;
@@ -44,7 +45,7 @@ export default defineContentScript({
         const bubble = document.createElement('div'); bubble.className = 'bubble';
         const eyebrow = document.createElement('div'); eyebrow.className = 'eyebrow'; eyebrow.textContent = working ? 'Ambient · working' : paused ? 'Ambient · paused' : 'Ambient · close companion';
         const title = document.createElement('p'); title.className = 'title'; title.textContent = working ? 'Checking your workspace' : suggestion?.title ?? (paused ? 'Monitoring is paused' : 'Here when you need a hand');
-        const detail = document.createElement('p'); detail.className = 'detail'; detail.textContent = suggestion?.detail ?? 'Only the tabs you selected belong to this workspace.';
+        const detail = document.createElement('p'); detail.className = 'detail'; detail.textContent = working ? progress || 'Starting the investigation…' : suggestion?.detail ?? 'Only the tabs you selected belong to this workspace.';
         bubble.append(eyebrow, title, detail);
         if (working) bubble.append(button('Stop task', 'stop', () => { void send({ type: 'ui:stop' }); }));
         else if (suggestion && !paused) {
@@ -63,11 +64,11 @@ export default defineContentScript({
       const elements: BrowserObservation['elements'] = [];
       for (const e of document.querySelectorAll<HTMLElement>('a[href],button,input,textarea,select,[role="button"],[role="textbox"],[contenteditable="true"],[role="tab"],[role="option"]')) {
         if (!visible(e) || own(e) || (e as HTMLInputElement).type === 'password' || (e as HTMLInputElement).type === 'hidden') continue;
-        const ref = `e${elements.length + 1}`; const text = label(e); refs.set(ref, { element: e, label: text });
-        elements.push({ ref, tag: e.tagName.toLowerCase(), role: e.getAttribute('role') || '', label: text, value: 'value' in e ? String(e.value).slice(0, 500) : undefined, inputType: e.getAttribute('type') || undefined });
+        const ref = `e${elements.length + 1}`; const text = label(e); refs.set(ref, { element: e, fingerprint: targetFingerprint(e, text) });
+        elements.push({ ref, tag: e.tagName.toLowerCase(), role: isSearchField(e, text, location.hostname) ? 'searchbox' : e.getAttribute('role') || '', label: text, value: 'value' in e ? String(e.value).slice(0, 500) : undefined, inputType: e.getAttribute('type') || undefined });
         if (elements.length >= 180) break;
       }
-      inspectionVersion = version();
+      inspectionVersion = version(); inspectedUrl = location.href;
       return { url: location.href, title: document.title, version: inspectionVersion, text: document.body.innerText.slice(0, 24000), elements };
     }
     async function execute(action: BrowserAction): Promise<BrowserObservation> {
@@ -76,9 +77,11 @@ export default defineContentScript({
       if (!working || !taskId) throw new Error('No active browser task.');
       if (action.action === 'navigate') throw new Error('Navigation must be handled by the background bridge.');
       if (action.action === 'scroll') { scrollBy({ top: action.text === 'up' ? -innerHeight * .75 : innerHeight * .75 }); return inspect(); }
-      if (action.version !== inspectionVersion || action.version !== version()) throw new Error('Page changed since inspection. Inspect again before acting.');
       const target = refs.get(action.ref || ''); const element = target?.element;
-      if (!element?.isConnected || !visible(element) || label(element) !== target?.label) throw new Error('Target changed. Inspect the page again.');
+      if (!element || !target) throw new Error('Target is not in the latest inspection. Inspect the page again.');
+      assertFreshTarget({ requestedVersion: action.version, inspectionVersion, inspectedUrl, currentUrl: location.href,
+        connected: element.isConnected, visible: visible(element), before: target.fingerprint, after: targetFingerprint(element, label(element)) });
+      if (element.matches(':disabled,[readonly],[aria-disabled="true"]')) throw new Error('This control is disabled or read-only.');
       const targetLabel = label(element);
       if (isCommitControl(targetLabel)) throw new Error('This control requires human review. Saving, posting, sending and deleting are disabled.');
       const link = element.closest<HTMLAnchorElement>('a[href]');
@@ -88,7 +91,7 @@ export default defineContentScript({
       if (action.action === 'click') element.click();
       else if (action.action === 'fill') {
         const current = 'value' in element ? String(element.value) : element.textContent ?? '';
-        if (!canReplaceValue(targetLabel, current, action.text ?? '')) throw new Error('This field already contains a value. Leave existing user input for human review.');
+        if (!canReplaceValue(isSearchField(element, targetLabel, location.hostname) ? 'Search' : targetLabel, current, action.text ?? '')) throw new Error('This field already contains a value. Leave existing user input for human review.');
         if (element instanceof HTMLSelectElement) {
           const option = [...element.options].find(o => o.value === action.text || o.text === action.text);
           if (!option) throw new Error('No matching select option.'); element.value = option.value;
@@ -101,7 +104,7 @@ export default defineContentScript({
       } else if (action.action === 'press') {
         const key = action.text?.toUpperCase();
         if (!['ENTER', 'TAB', 'ESCAPE'].includes(key ?? '')) throw new Error('Supported keys are ENTER, TAB and ESCAPE.');
-        if (key === 'ENTER' && !/search|filter|find/i.test(targetLabel + ' ' + (element.getAttribute('type') ?? ''))) throw new Error('Enter is only permitted in a search field. Use the human review step for forms.');
+        if (key === 'ENTER' && !isSearchField(element, targetLabel, location.hostname)) throw new Error('Enter is only permitted in a search field. Use the human review step for forms.');
         element.focus();
         // Native keyboard dispatch is done by the background after this validation.
         return { ...inspect(), text: '[KEY_TARGET_VALIDATED]\n' + document.body.innerText.slice(0, 24000) };
@@ -115,7 +118,7 @@ export default defineContentScript({
       const vendorInput = document.querySelector<HTMLInputElement>('input[name="entity_display"],input[id="entity_display"],input[name="vendor"],input[aria-label="Vendor"]');
       const vendor = vendorInput?.value?.slice(0, 300) ?? '';
       const kind = detectBillForm(location.href, heading, hasForm) ? 'bill_form' : 'page';
-      const context = { tabId: 0, url: location.href, title: document.title, version: version(), kind, vendor, observedAt: Date.now() };
+      const context = { tabId: 0, url: location.href, title: document.title, version: version(), visitId: documentId, kind, vendor, observedAt: Date.now() };
       const fingerprint = `${location.href}:${kind}:${vendor}`;
       if (fingerprint === lastContext) return; lastContext = fingerprint;
       await send({ type: 'page:context', context });
@@ -130,7 +133,7 @@ export default defineContentScript({
     chrome.runtime.onMessage.addListener((message, _sender, respond) => {
       if (message.type === 'observer:ping') { respond({ ok: true }); }
       else if (message.type === 'presence') {
-        active = message.active; paused = message.paused; working = message.working; taskId = message.taskId; suggestion = message.suggestion; scope = message.scope ?? '';
+        active = message.active; paused = message.paused; working = message.working; taskId = message.taskId; suggestion = message.suggestion; scope = message.scope ?? ''; progress = message.progress ?? '';
         if (message.top) host.style.top = message.top;
         if (message.reset) lastContext = '';
         render(); void observe(); respond({ ok: true });

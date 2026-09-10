@@ -37,7 +37,7 @@ internet. The key stays on the server. SDK tracing is disabled in this prototype
 7. Open **Add New Bill** in NetSuite. The floating icon offers an investigation.
 
 After rebuilding, use **Reload** on the extension card and reopen its panel.
-After a full browser restart, reselect the workspace tabs; stale tab IDs are
+Extension reloads retain selected tabs. After a full browser restart, reselect the workspace tabs; stale tab IDs are
 deliberately cleared. The prototype currently uses port **4318** for the bridge.
 
 ## Practice with synthetic data
@@ -63,8 +63,9 @@ workspace does not control browser tabs and its investigation button is disabled
   pairing, suggestions, activity, conversation, findings, and source links.
 - Programmatic injection only into selected tabs; floating icon, movable vertical
   position, contextual suggestion, pause/remove controls, and a Stop action.
-- A local rule recognizes new vendor-bill forms. Context changes are debounced,
-  suggestions are deduplicated, and dismissals persist for 24 hours.
+- A local rule recognizes new vendor-bill forms. Context changes are debounced.
+  Accepted/dismissed suggestions stay quiet during the current bill visit; reopening
+  the bill starts a fresh visit and can offer the suggestion again.
 - Node/Fastify WebSocket bridge with token pairing and an extension-origin check.
 - Agents SDK with `gpt-6-astra`, browser tools, typed findings, bounded tasks,
   streaming responses, and SQLite persistence.
@@ -73,6 +74,9 @@ workspace does not control browser tabs and its investigation button is disabled
 - Successful task histories can continue; workspace memory contains summaries.
   Stop/disconnect cancel queued work. Interrupted runs require fresh inspection;
   this version does not serialize and resume the exact interrupted SDK run state.
+- Accepting a floating suggestion opens Activity. Live progress, elapsed time,
+  control names, entered text, and retained error details make browser work visible.
+  Assistant responses render Markdown, including tables and source links.
 
 ## Boundaries and current limitations
 
@@ -141,12 +145,15 @@ in an active workspace, then run:
 ```sh
 node scripts/local-control.mjs status
 node scripts/local-control.mjs inspect-netsuite
+node scripts/local-control.mjs test-gmail-search
 node scripts/local-control.mjs result TASK_ID
 ```
 
 The control API requires the local pairing token, which the script reads without
 printing. Tasks use the same agent and extension bridge as the side panel. The
 inspection test enforces inspect/screenshot-only tools on the server.
+The Gmail regression test enters `invoice newer_than:90d` and verifies the search
+results through the extension; it does not open or change messages.
 
 ## Code map
 

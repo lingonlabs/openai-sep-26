@@ -9,6 +9,8 @@ export class Hub {
   workspaces: Workspace[] = []; tabs: BrowserTab[] = []; activeId: string | null = null;
   tasks: Task[]; suggestions: Suggestion[] = []; running: { task: Task; controller: AbortController } | null = null;
   private contexts = new Map<number, PageContext>();
+  private visits = new Map<number, string>();
+  private observations = new Map<number, BrowserObservation>();
   private dismissed: Record<string, number>;
   private pending = new Map<string, Pending>();
   send: (message: ServerMessage) => void = () => {};
@@ -22,6 +24,9 @@ export class Hub {
   async receive(message: ClientMessage) {
     if (message.type === 'sync') {
       this.workspaces = message.workspaces; this.tabs = message.tabs; this.activeId = message.activeWorkspaceId;
+      for (const [id, context] of this.contexts) {
+        if (this.tabs.find(t => t.id === id)?.url !== context.url) { this.contexts.delete(id); this.visits.delete(id); }
+      }
       const active = this.workspaces.find(w => w.id === this.activeId);
       if (this.running && (this.running.task.workspaceId !== this.activeId || active?.paused || !active)) this.stop('Workspace paused or switched.');
       if (this.running) {
@@ -52,10 +57,14 @@ export class Hub {
     try { assertTarget(this.workspaces.find(w => w.id === this.activeId), this.activeId, this.tabs.find(t => t.id === context.tabId)); } catch { return; }
     const tab = this.tabs.find(t => t.id === context.tabId);
     if (!tab || tab.url !== context.url || Date.now() - context.observedAt > 60000) return;
+    const previous = this.contexts.get(context.tabId);
+    if (!previous || previous.kind !== context.kind || previous.visitId !== context.visitId || previous.url !== context.url)
+      this.visits.set(context.tabId, randomUUID());
     this.contexts.set(context.tabId, context);
     this.suggestions = this.suggestions.filter(s => s.tabId !== context.tabId || (context.kind === 'bill_form' && s.vendor === context.vendor));
     if (context.kind !== 'bill_form' || this.running) { this.publish(); return; }
-    const key = `${this.activeId}:${context.tabId}:bill:${context.vendor}`;
+    const key = `${this.activeId}:${context.tabId}:visit:${this.visits.get(context.tabId)}:bill:${context.vendor}`;
+    this.suggestions = this.suggestions.filter(s => s.tabId !== context.tabId || s.key === key);
     if (Date.now() - (this.dismissed[key] ?? 0) < 24 * 3600000 || this.suggestions.some(s => s.key === key)) return;
     this.suggestions.push({ id: randomUUID(), workspaceId: this.activeId!, tabId: context.tabId, version: context.version,
       title: context.vendor ? `Check invoices for ${context.vendor}?` : 'Check Gmail before entering this bill?',
@@ -79,7 +88,11 @@ export class Hub {
     if (!this.connected) throw new Error('Extension is disconnected.');
     if (action.action === 'navigate' && (!action.url || !withinScope(action.url, workspace!.tabs.find(t => t.id === action.tabId)!.scope))) throw new Error('Navigation would leave the selected tab scope.');
     const id = randomUUID();
-    const activity = { id, text: `${action.action[0].toUpperCase() + action.action.slice(1)} · ${tab!.title}`, at: Date.now(), status: 'working' as 'working' | 'done' | 'error' };
+    const site = new URL(tab!.url).hostname;
+    const appName = site === 'mail.google.com' ? 'Gmail' : site.endsWith('netsuite.com') ? 'NetSuite' : tab!.title;
+    const target = this.observations.get(action.tabId)?.elements.find(e => e.ref === action.ref)?.label;
+    const verbs = { inspect: 'Read', screenshot: 'View screenshot of', click: 'Click', fill: 'Fill', press: 'Press', scroll: 'Scroll', navigate: 'Open page in' };
+    const activity: Task['activity'][number] = { id, text: `${verbs[action.action]} ${action.action === 'press' ? action.text + ' in ' : ''}${target ? target + ' · ' : ''}${appName}`, detail: action.action === 'fill' ? action.text ?? undefined : action.action === 'navigate' ? action.url ?? undefined : undefined, at: Date.now(), status: 'working' };
     task.activity.push(activity); this.publish();
     try {
       const observation = await new Promise<BrowserObservation>((resolve, reject) => {
@@ -87,8 +100,8 @@ export class Hub {
         this.pending.set(id, { resolve, reject, timer });
         this.send({ type: 'command', id, taskId: task.id, workspaceId: task.workspaceId, args: action });
       });
-      signal.throwIfAborted(); activity.status = 'done'; this.publish(); return observation;
-    } catch (error) { activity.status = 'error'; this.publish(); throw error; }
+      signal.throwIfAborted(); this.observations.set(action.tabId, observation); activity.status = 'done'; this.publish(); return observation;
+    } catch (error) { activity.status = 'error'; activity.error = error instanceof Error ? error.message : String(error); this.publish(); throw error; }
   }
   private async start(message: Extract<ClientMessage, { type: 'start' }>) {
     if (!this.apiReady) throw new Error('Add OPENAI_API_KEY to the backend .env and restart the server.');

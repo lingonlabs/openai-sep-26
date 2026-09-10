@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowUp, ArrowUpRight, Check, ChevronDown, Circle, CircleCheck, Clock3, ExternalLink, FileText, FolderOpen, Link2, Loader2, Mail, MoreHorizontal, Pause, Play, Plus, Settings2, ShieldCheck, Sparkles, Square, Table2, X } from 'lucide-react';
-import { emptyState, type ExtensionState, type Workspace, type Task, type BrowserTab } from '@ambient/shared';
+import { emptyState, taskProgress, type ExtensionState, type Workspace, type Task, type BrowserTab } from '@ambient/shared';
 import { Button } from './components/Button';
+import { Markdown } from './components/Markdown';
 
 const isExtension = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
 const preview: ExtensionState = { ...structuredClone(emptyState), connection: 'connected', activeWorkspaceId: 'preview',
@@ -15,6 +16,10 @@ const preview: ExtensionState = { ...structuredClone(emptyState), connection: 'c
     { id: 3, title: 'Vendor register', url: 'https://docs.google.com/spreadsheets/d/demo/' },
   ], server: { ...structuredClone(emptyState.server), apiReady: true, suggestions: [{ id: 'preview', workspaceId: 'preview', tabId: 1, version: '', title: 'A new bill. A useful place to start.', detail: 'I can check Gmail for invoices, compare them with NetSuite, and flag anything that may need recording.', vendor: '', key: '', createdAt: Date.now() }] },
 };
+preview.server.tasks = [{ id: 'preview-task', workspaceId: 'preview', title: 'Synthetic invoice investigation', status: 'completed', createdAt: Date.now() - 30000, updatedAt: Date.now(), findings: [],
+  messages: [{ role: 'assistant', text: '## Invoice review\n\nFound **one invoice lead** in the synthetic preview.\n\n| Vendor | Invoice | Status |\n|---|---|---|\n| Northstar | NS-1042 | Needs review |\n\n- Check the amount against the bill.\n- Review the [source email](https://example.com/invoice).\n\nSearch could not be completed. No bill was saved.' }],
+  activity: [{ id: 'preview-read', text: 'Read Gmail', at: Date.now() - 20000, status: 'done' }, { id: 'preview-error', text: 'Fill Search mail · Gmail', detail: 'subject:invoice', at: Date.now() - 10000, status: 'error', error: 'Example error: the search control was replaced. Inspect the page again.' }],
+}];
 function provider(tab: { url?: string; scope?: string; title: string }) {
   const url = tab.url ?? tab.scope ?? '';
   if (url.includes('netsuite')) return { name: 'NetSuite', label: 'Bills & ledger', icon: FileText, style: 'netsuite' };
@@ -29,7 +34,7 @@ export function App() {
   const [editing, setEditing] = useState<Workspace | 'new' | null>(null); const [draftName, setDraftName] = useState('September close');
   const [selectedTabs, setSelectedTabs] = useState<number[]>([]); const [saving, setSaving] = useState(false);
   const [prompt, setPrompt] = useState(''); const [selectedTask, setSelectedTask] = useState<string | null>(null);
-  const [view, setView] = useState<'workspace' | 'activity'>('workspace');
+  const [view, setView] = useState<'workspace' | 'activity'>(!isExtension && typeof location !== 'undefined' && new URLSearchParams(location.search).get('view') === 'activity' ? 'activity' : 'workspace');
   const active = state.workspaces.find(w => w.id === state.activeWorkspaceId);
   const tasks = state.server.tasks.filter(t => t.workspaceId === active?.id);
   const task = tasks.find(t => t.id === selectedTask) ?? tasks[0];
@@ -37,6 +42,9 @@ export function App() {
   const watching = !!active && !active.paused;
   const running = !!state.server.runningTaskId;
   const available = isExtension && state.connection === 'connected' && state.server.apiReady && watching && !!active?.tabs.some(t => !t.paused);
+  useEffect(() => {
+    if (state.server.runningTaskId) { setView('activity'); setSelectedTask(state.server.runningTaskId); }
+  }, [state.server.runningTaskId]);
   async function dispatch(message: unknown) {
     if (!isExtension) { setError('This is an interface preview. Load the extension in your demo Chrome profile to use the workspace.'); return; }
     setError('');
@@ -83,7 +91,7 @@ export function App() {
       {view === 'workspace' ? <>
         <div className="intro"><div className="eyebrow">YOUR CLOSE COMPANION</div><h1>A little more<br/><em>peace of mind.</em></h1><p>I’ll keep an eye on your workspace<br/>and offer a hand at the right moment.</p></div>
         {active ? <>
-          <div className="watching-line"><span className={'status-dot ' + (watching ? 'green' : '')}/><span>{watching ? `Watching ${active.tabs.filter(t => !t.paused).length} selected tabs` : 'Workspace paused'}</span><Button variant="ghost" size="small" onClick={() => { void dispatch({ type: 'workspace:pause', paused: watching }); }}>{watching ? <Pause size={12}/> : <Play size={12}/>} {watching ? 'Pause' : 'Resume'}</Button></div>
+          <div className="watching-line"><span className={'status-dot ' + (watching ? 'green' : '')}/><span>{running ? 'Investigation in progress' : watching ? `Watching ${active.tabs.filter(t => !t.paused).length} selected tabs` : 'Workspace paused'}</span><Button variant="ghost" size="small" onClick={() => { void dispatch({ type: 'workspace:pause', paused: watching }); }}>{watching ? <Pause size={12}/> : <Play size={12}/>} {watching ? 'Pause' : 'Resume'}</Button></div>
           <section className="tabs-card"><div className="section-header"><span>IN THIS WORKSPACE</span><button onClick={() => edit(active)}>Edit tabs <Settings2 size={12}/></button></div>{active.tabs.length ? active.tabs.map(tab => { const p = provider(tab); const Icon = p.icon; return <div className="tab-row" key={tab.id}><div className={'app-icon ' + p.style}><Icon size={17}/></div><div className="tab-detail"><strong>{p.name}</strong><span title={tab.title}>{tab.title}</span></div><button className="tab-pause" aria-label={`${tab.paused ? 'Resume' : 'Pause'} ${p.name}`} onClick={() => { void dispatch({ type: 'tab:pause', tabId: tab.id, paused: !tab.paused }); }}>{tab.paused ? <Play size={13}/> : <span className="tiny-dot"/>}</button></div>; }) : <div className="empty-small">Select your open tabs to start watching. Tabs must be reselected after restarting Chrome.</div>}</section>
           {suggestion && watching ? <section className="suggestion-card"><div className="suggestion-label"><Sparkles size={13}/> A MOMENT TO HELP</div><h2>{suggestion.title}</h2><p>{suggestion.detail}</p><div className="suggestion-actions"><Button disabled={!available || running} onClick={() => { void dispatch({ type: 'ui:accept', id: suggestion.id }).then(() => setView('activity')); }}>Check invoices <ArrowUpRight size={16}/></Button><button onClick={() => { void dispatch({ type: 'ui:dismiss', id: suggestion.id }); }}>Not now</button></div><div className="scope-note"><ShieldCheck size={12}/> Findings first. You review any bill changes.</div></section> : <section className="quiet-card"><div className="quiet-orbit"><Sparkles size={24} strokeWidth={1}/></div><h2>{running ? 'Working through your tabs' : watching ? 'A quiet second pair of eyes' : 'Here whenever you’re ready'}</h2><p>{running ? 'Follow the investigation in Activity. You can stop it at any time.' : 'Open a new vendor bill in NetSuite. I’ll offer to check your inbox for supporting invoices.'}</p>{running && <Button size="small" variant="secondary" onClick={() => setView('activity')}>View progress <ArrowUpRight size={13}/></Button>}</section>}
           {!state.server.apiReady && state.connection === 'connected' && <p className="api-note">Watching is ready. Add an OpenAI API key to the local server to enable investigations.</p>}
@@ -99,11 +107,16 @@ export function App() {
   </div>;
 }
 
-function TaskView({ task, onOpen, onPrepare, canPrepare }: { task: Task; onOpen: (url: string) => void; onPrepare: (finding: Task['findings'][number]) => void; canPrepare: boolean }) {
+export function TaskView({ task, onOpen, onPrepare, canPrepare }: { task: Task; onOpen: (url: string) => void; onPrepare: (finding: Task['findings'][number]) => void; canPrepare: boolean }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { if (task.status !== 'running') return; const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, [task.status]);
+  const issues = task.activity.filter(a => a.status === 'error');
   return <div className="task-view"><div className={'task-status ' + task.status}>{task.status === 'running' ? <Loader2 size={13} className="spin"/> : task.status === 'completed' ? <CircleCheck size={13}/> : <Circle size={13}/>} {task.status === 'running' ? 'Investigating' : task.status === 'completed' ? 'Investigation complete' : task.status === 'stopped' ? 'Stopped' : 'Needs attention'}</div>
+    {task.status === 'running' && <div className="live-progress" role="status"><Loader2 size={16} className="spin"/><div><strong>{taskProgress(task)}</strong><small>{task.activity.filter(a => a.status === 'done').length} actions completed · {Math.max(0, Math.floor((now - task.createdAt) / 1000))}s elapsed</small></div></div>}
+    {issues.length > 0 && <div className="issue-summary">{issues.length} browser {issues.length === 1 ? 'action failed' : 'actions failed'}. {task.status === 'running' ? 'The agent is reviewing what it can do next.' : 'Review the result for incomplete checks.'} Details are in Browser activity below.</div>}
     {task.error && <div className="error-box">{task.error}</div>}
-    {task.messages.map((message, i) => <div key={i} className={'message ' + message.role}><div className="message-author">{message.role === 'user' ? 'YOU' : 'AMBIENT'}</div><p>{message.text || 'Reading your workspace…'}</p></div>)}
+    {task.activity.length > 0 && <details className="activity-log" open={task.status === 'running' || issues.length > 0}><summary>Browser activity <span>{task.activity.length} actions</span></summary>{[...task.activity].reverse().map(a => <div key={a.id} className={'activity-event ' + a.status}>{a.status === 'working' ? <Loader2 size={13} className="spin"/> : a.status === 'done' ? <Check size={13}/> : <X size={13}/>}<div className="event-body"><strong>{a.text}</strong><small>{a.status === 'working' ? 'In progress' : a.status === 'done' ? 'Done' : 'Failed'} · {new Date(a.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</small>{a.detail && <p>{a.detail}</p>}{a.status === 'error' && <p className="event-error">{a.error || 'This older run did not retain the error detail. Retry with the updated extension for a precise error.'}</p>}</div></div>)}</details>}
+    {task.messages.filter(message => message.text).map((message, i) => <div key={i} className={'message ' + message.role}><div className="message-author">{message.role === 'user' ? 'YOU' : 'AMBIENT'}</div>{message.role === 'assistant' ? <Markdown text={message.text} onOpen={onOpen}/> : <p>{message.text}</p>}</div>)}
     {task.findings.length > 0 && <div className="findings"><div className="section-header"><span>FINDINGS · {task.findings.length}</span></div>{task.findings.map(f => <article className="finding-card" key={f.id}><div className="finding-top"><span className={'finding-status ' + f.status}>{({ candidate: 'No match found', recorded: 'Already recorded', onboarding: 'Check onboarding', uncertain: 'Needs review' })[f.status]}</span><strong>{f.amount}</strong></div><h3>{f.vendor}</h3><div className="invoice-ref">Invoice {f.invoice}</div><p>{f.explanation}</p><div className="sources">{f.sources.map((s, i) => <button key={i} onClick={() => onOpen(s.url)}><ExternalLink size={11}/>{s.title}</button>)}</div>{f.status === 'candidate' && <Button variant="secondary" size="small" disabled={!canPrepare} onClick={() => onPrepare(f)}>Prepare for review <ArrowUpRight size={13}/></Button>}</article>)}</div>}
-    {task.activity.length > 0 && <details className="activity-log" open={task.status === 'running'}><summary>Browser activity <span>{task.activity.length} actions</span></summary>{task.activity.map(a => <div key={a.id} className={'activity-event ' + a.status}>{a.status === 'working' ? <Loader2 size={12} className="spin"/> : a.status === 'done' ? <Check size={12}/> : <X size={12}/>}<span>{a.text}</span><time>{new Date(a.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>)}</details>}
   </div>;
 }
