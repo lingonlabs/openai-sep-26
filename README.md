@@ -1,142 +1,86 @@
-# Close Copilot — journal review prototype
+# Close Copilot
 
-A local journal-entry review lab, a Chrome extension shell, and a Gate relay.
-The lab uses a synthetic company and simulated posting. NetSuite integration
-and native computer-use editing are **not implemented or verified**.
+A local, workspace-aware invoice assistant for the August close. Select a NetSuite sandbox tab, Gmail inbox, and optional vendor-onboarding sheet. The assistant notices Add New Bill, offers an investigation, compares invoice evidence with recorded bills, and prepares a selected bill for human review. It never clicks Save.
 
-## Scope checkpoint
+The complete flow runs in two surfaces: a Chrome MV3 extension and a local workbench with clearly labelled synthetic applications. Both use the same page runtime, WebSocket protocol, backend, and agent tools. **Live Astra has completed the synthetic workflow. The real NetSuite/Gmail profile still needs a supervised adapter rehearsal.**
 
-This code implements the journal-entry Gate plan approved in Julie's chat.
-The subsequently discovered `coordination` branch describes an ambient
-NetSuite/Gmail **vendor-bill** assistant using WXT, React, Fastify, WebSockets,
-and the Agents SDK. That is a different first workflow and stack.
+## Run
 
-The shared planning worktree is `../openai-sep-26-coord/`. Read its current
-`COORDINATION.md` and `docs/project-brief.html` before further integration.
-This prototype's schemas are local implementation contracts, not an agreed
-team browser-bridge contract. Ownership and scope alignment remain open.
-Do not merge the planning branch into implementation branches.
-
-## Start locally
-
-Requires Node.js 22 or later.
+Use Node.js 22.12+ (or current Node 24 LTS) and pnpm 11.19. The current machine's Node 22.11 passed the tests and builds but prints Vite's minimum-version warning.
 
 ```sh
-npm ci
-cp .env.example .env
-npm run dev
+pnpm install --frozen-lockfile
+# If .env does not exist, copy .env.example to .env. Preserve an existing key.
+pnpm build
+pnpm start
 ```
 
-If `.env` already exists, keep it. Open <http://127.0.0.1:4317/fixture>.
-The first start creates a machine-local pairing token in `.local/relay-token`.
-Paste that token into the lab's Connect field. The token is never served by
-the web server. The API key is a separate credential and must never go into
-the browser panel.
+The app runs at `http://127.0.0.1:4318`. In a second terminal, `pnpm open` opens and pairs the workbench without printing the token. Alternatively, open the URL and paste `.local/relay-token` into the pairing field. The pairing token is separate from the OpenAI API key.
 
-The default `GATE_MODE=demo` uses deterministic rules against synthetic
-evidence. Every result is labelled **Rules demo · no AI call**. Passing demo
-evaluations does not measure Astra's accuracy.
+Configure these values in the ignored `.env`:
 
-Try D1 (allow), D2 (duplicate block), and D3 (bank fee correction). The D3
-proposal changes date, period, debit, and offset credit. Applying it stops
-before Save; another Save runs a fresh review.
+```dotenv
+OPENAI_API_KEY=your-local-key
+AGENT_MODE=live
+ASTRA_MODEL=gpt-6-astra
+APP_PORT=4318
+NETSUITE_SANDBOX_ORIGIN=https://11816061-sb1.app.netsuite.com
+```
 
-## Live Astra
+`live` uses the OpenAI Agents SDK and never silently substitutes test results. `AGENT_MODE=demo` explicitly selects the deterministic provider, which supports only the included synthetic applications. Keep port 4318 for the packaged extension; its endpoint and host permissions are pinned to that port.
 
-Set `OPENAI_API_KEY` in the ignored `.env` file, then run:
+## Demo
+
+1. Open the workbench and create **August close** with all three demo tabs.
+2. Accept **Check invoices** when the assistant notices Add New Bill.
+3. Review the results: Northstar is already recorded; Marlow has no match in the checked records; Beacon has pending vendor onboarding.
+4. Expand a finding and open its captured source evidence.
+5. Select **Prepare bill for review** for Marlow. Confirm vendor, invoice MD-2608, date, and USD 4,250.00. Review the account, tax, period and required custom fields yourself. The bill stays unsaved.
+
+The **Demo guide** button provides the walkthrough inside the application. A live recording and its result JSON are in the local, ignored `recordings/` directory on Julie's machine. See [the rehearsal notes](docs/DEMO.md).
+
+## Load the Chrome extension
+
+1. Use the dedicated demo Chrome profile. Open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**.
+2. Select `apps/extension/.output/chrome-mv3` from this repository.
+3. Open the exact NetSuite sandbox, the demo Gmail inbox, and optionally the vendor sheet.
+4. Open Close Copilot from Chrome's toolbar. Pair using `.local/relay-token`.
+5. Create a named workspace and select only the intended tabs. A draggable icon appears on watched pages. Use it to open the side panel.
+
+Pause individual tabs, pause the workspace, remove a tab, or stop the current task from the panel. Switching workspaces stops the previous controlling task. Reconnects restore observation, never replay actions. Reload the extension and watched pages after rebuilding it.
+
+## Architecture
+
+| Package            | Responsibility                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------- |
+| `apps/extension`   | WXT, React, MV3 service worker, side panel, floating icon, selected-tab bridge                            |
+| `apps/server`      | Fastify, authenticated WebSocket relay, Agents SDK coordinator/investigator/preparer/chat, SQLite         |
+| `apps/workbench`   | React demo workspace with synthetic NetSuite, Gmail and vendor-sheet pages                                |
+| `packages/shared`  | Zod contracts, explicit command outcomes, findings and exact-decimal comparison                           |
+| `packages/browser` | DOM observations, stable element handles, stale-page checks, constrained actions and verified form writes |
+| `packages/ui`      | Shared React panel, Tailwind styling, shadcn-style Radix/CVA button primitives                            |
+
+The coordinator receives small context events; each investigation, preparation, and chat task has its own SQLite-backed SDK session. The workspace retains a compact summary. Tasks and commands carry workspace/task/command IDs; preparation points to its parent investigation. Selected observations leave the machine for OpenAI inference. API keys remain server-side; response storage and SDK tracing are disabled. History and captured source text stay in `.local/close-copilot.sqlite`, excluded from Git.
+
+## Verification
 
 ```sh
-npm run smoke:live
+pnpm check:ambient
+pnpm test:ambient-browser
+# With a live server running and a configured key; incurs real API usage:
+LIVE_DEMO=1 pnpm demo:record
 ```
 
-For live Gate checks, set `GATE_MODE=live` and restart the relay. The model
-defaults to `gpt-6-astra`; reasoning starts at `low`. This path uses the
-Responses API and Structured Outputs. It does not fall back to demo rules
-when access, parsing, evidence validation, or a request fails.
+Browser tests run in isolated Chromium profiles, including one that loads the actual packaged extension. They never use a personal Chrome profile. Stop the app on port 4318 before the ordinary browser suite; it starts a deterministic server with an in-memory database. The live recording test explicitly opts into the already-running live server.
 
-Live mode sends the loaded close pack and submitted entry to OpenAI. The
-included pack is entirely synthetic. No NetSuite or Gmail data is loaded by
-this prototype. Requests disable response storage and automatic retries.
+Unit and transport tests cover evidence validation, exact matching, workspace boundaries, single-task ownership, cancellation, no replay, and local request authentication. Browser tests cover the full workflow, source viewing, pause/dismiss behavior, blocked Save, stale pages, duplicate actions, unknown vendors, existing user input, currency checks, and human interruption.
 
-## Extension lab
+## Current limits
 
-```sh
-npm run build
-```
+- Real NetSuite custom fields, vendor widgets, line sublists, frames, Gmail attachments, and Sheets canvas rendering require the dedicated-profile rehearsal. This version reads visible DOM text and labels. It does not OCR PDFs, capture screenshots for the model, or inject trusted native keyboard events. Unsupported forms stop with a visible error.
+- USD bill preparation requires an observable USD currency field and uniquely identified vendor, invoice number, date, and amount controls. The vendor must already exist. Account/line coding, tax and period remain human review steps. Conflicting existing bill details are never overwritten automatically.
+- Exact matches compare vendor, invoice number, currency and amount. Cited fields must be present in captured text. This is an evidence check, not a guarantee that an entire account or every attachment was searched. Semantic interpretation still requires human review.
+- Stop or disconnect can leave partial edits. Unknown outcomes stop the task instead of retrying. Inspect the form before starting again.
+- Local SQLite is a single-process prototype store, not an encrypted multi-user service. No application OAuth, account connectors, deployment, automatic submission, or scheduled background runs are included.
 
-In a dedicated Chrome test profile, open `chrome://extensions`, enable
-Developer mode, and load `dist/extension` as an unpacked extension. Open
-<http://127.0.0.1:4317/fixture?extension=1>, click the extension icon, and pair
-its side panel with `.local/relay-token`.
-
-The `extension=1` route disables the embedded review controller so it cannot
-double-handle Save. The extension uses the same form controller and Gate
-contract as the embedded lab. In that mode, an absent extension cannot be
-mistaken for a successful integrated check.
-
-`NETSUITE_ORIGIN` can configure an exact sandbox host in the built manifest.
-It does **not** enable a NetSuite adapter: no ERP selectors are guessed, no
-ERP form is edited, and unsupported pages show an explicit status.
-`activeTab` is reserved for the future capture workflow. No screenshots or
-debugger input are currently sent to Astra.
-
-## Verify
-
-```sh
-npm run check
-npx playwright install chromium
-npm run test:browser
-npm run eval:gate
-```
-
-`check` runs type checking, unit/HTTP integration tests, and the build.
-Browser tests use an isolated Playwright Chromium, never a personal profile.
-They cover clean Save, duplicate blocking, balanced correction, explicit
-unchecked continuation, stale review handling, and small-screen layout.
-
-The Gate evaluator sends all 14 cases through the running HTTP relay three
-times and writes `logs/gate-eval.json`. A live relay requires:
-
-```sh
-npm run eval:gate -- --live
-```
-
-Set `EVAL_DELAY_MS` according to actual account rate limits. Live requests
-consume API usage. Failures and inconsistent decisions remain visible.
-
-## Source map
-
-| Path | Purpose |
-| --- | --- |
-| `src/shared/schema.ts` | Validated entries, verdicts, changes, and fingerprints |
-| `src/gate/` | Demo rules, live provider, evidence validation |
-| `src/relay/` | Paired localhost HTTP server and redacted run logs |
-| `src/browser/` | Shared Save controller, field edits, panel rendering |
-| `src/fixture/` | Synthetic journal form and embedded review lab |
-| `src/extension/` | Manifest V3 service worker, content script, side panel |
-| `data/` | Synthetic close pack and UI scenarios |
-| `eval/cases/` | 14 independent expected-decision fixtures |
-| `tests/` | Logic, transport, and browser verification |
-
-## Boundaries and known gaps
-
-- USD only; a complete, synthetic account list and explicit August policy.
-- The fixture records simulated saves only. It does not mutate an ERP or
-  append entries to the close pack. Reload/reset scenarios between rehearsals.
-- Deterministic arithmetic, period, and account checks cannot be waived by
-  the model. Live evidence existence is validated; semantic support still
-  needs golden-set evaluation and human review.
-- Corrections use constrained field writes, not native computer use. The
-  original snapshot and approved result must match; stale or unbalanced
-  edits fail. Cancellation can leave partially applied changes for review.
-- Original Save intent resumes once for an unchanged allowed entry. Warnings
-  and unavailable checks need an explicit continuation. Blocked entries do not.
-- Pairing credentials and logs stay local. The server binds to `127.0.0.1`,
-  validates Host/Origin, authenticates API requests, and serves only four
-  declared fixture assets. `.env` and `.local` cannot be downloaded.
-- No WXT/React workspace picker, Gmail investigation, vendor-sheet lookup,
-  Agents SDK coordinator, SQLite history, or reconnectable WebSocket bridge
-  exists in this branch. Those belong to the coordination brief awaiting
-  scope and ownership alignment.
-
-See `docs/PHILIPP_HANDOFF.md` for the current interface and integration notes.
+The former journal-entry prototype remains under `src/` and the local tag `journal-prototype-v0.1`. Its separate run commands are documented in [JOURNAL_PROTOTYPE.md](docs/JOURNAL_PROTOTYPE.md). Team planning lives in the separate `coordination` worktree; implementation notes are in [PHILIPP_HANDOFF.md](docs/PHILIPP_HANDOFF.md).

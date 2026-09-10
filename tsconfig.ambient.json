@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "types": ["node", "chrome", "vite/client"],
+    "paths": {
+      "@close/shared": ["./packages/shared/src/index.ts"],
+      "@close/browser": ["./packages/browser/src/index.ts"],
+      "@close/ui": ["./packages/ui/src/index.ts"]
+    },
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "packages",
+    "apps/server",
+    "apps/workbench",
+    "tests/ambient-browser",
+    "playwright.ambient.config.ts"
+  ],
+  "exclude": ["**/node_modules", "**/.output", "**/.wxt"]
+}

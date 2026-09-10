@@ -1,0 +1,12 @@
+{
+  "name": "@close/browser",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@close/shared": "workspace:*"
+  },
+  "version": "0.2.0",
+  "private": true,
+  "type": "module"
+}

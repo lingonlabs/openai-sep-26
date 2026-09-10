@@ -1,0 +1,26 @@
+{
+  "name": "@close/extension",
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "typecheck": "wxt prepare && tsc --noEmit"
+  },
+  "dependencies": {
+    "@close/shared": "workspace:*",
+    "@close/browser": "workspace:*",
+    "@close/ui": "workspace:*",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "lucide-react": "^0.577.0"
+  },
+  "devDependencies": {
+    "wxt": "^0.20.19",
+    "@wxt-dev/module-react": "^1.2.2",
+    "@tailwindcss/vite": "^4.2.1",
+    "tailwindcss": "^4.2.1",
+    "dotenv": "^17.4.2"
+  },
+  "version": "0.2.0",
+  "private": true,
+  "type": "module"
+}

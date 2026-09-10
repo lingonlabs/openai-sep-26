@@ -1,77 +1,35 @@
-# Implementation handoff — scope alignment pending
+# Philipp handoff — complete local invoice demo
 
-Date: 2026-09-10. Implementation branch: `julie-local`.
-Planning worktree: `../openai-sep-26-coord`, branch `coordination`.
-Planning baseline read: `ebbd16b`.
+Date: 2026-09-10. Code branch: `julie-local`. Planning worktree: `../openai-sep-26-coord`, branch `coordination`.
 
-## What exists
+Julie asked for the entire build, so both extension and backend workstreams have been implemented locally against the newer ambient vendor-bill brief. This is implementation coverage, not an assignment of ongoing human ownership. The old journal prototype is preserved under `journal-prototype-v0.1`.
 
-This branch started from the two Close Copilot PDFs and the chat-approved
-journal-entry plan, before the coordination branch was available locally.
-It provides a runnable synthetic journal fixture, Save controller, Zod
-contracts, local paired relay, live Responses API provider, deterministic
-demo provider, all 14 Gate cases, and an extension shell.
+## Ready
 
-The shared brief instead targets vendor-bill discovery across selected
-NetSuite and Gmail tabs. No team owner is claimed here and no shared
-coordination status has been changed. Resolve the target workflow and shared
-contract together before implementing either side against this branch.
+- pnpm TypeScript packages; WXT + React extension, shared panel and demo workbench.
+- Named workspaces, selected tabs, draggable icon, contextual offers, dismiss cooldown, task progress, chat, pause/stop/remove controls.
+- Fastify WebSocket bridge; one controlling task per workspace, explicit command results, page/document versions, cancellation and no command replay.
+- Live Astra through the Agents SDK; coordinator, investigator and bill preparer; separate task sessions and compact workspace summaries in local SQLite.
+- Source-linked invoice findings; deterministic exact-match comparison and evidence validation; vendor onboarding outcomes.
+- User-selected bill preparation with fixed candidate values, currency/field checks, compare-before-write, verification and no Save.
+- A complete live-Astra recording on synthetic browser applications. The packaged extension also passed an isolated Chrome integration test.
 
-## Reusable pieces
+Run and extension loading instructions are in the root README. `.env`, `.local`, logs and recordings are excluded from Git. Use your own local API key and pairing token on your computer.
 
-- `EntrySchema`, decimal money handling, stable form fingerprints, and
-  compare-before-write changes illustrate the intended validation approach.
-- `GateController` rejects stale approvals, duplicate Save attempts, and
-  mismatched response IDs; it separates block, warn, and unavailable states.
-- `FixtureAdapter` demonstrates exact field writes and DOM verification.
-- The relay demonstrates localhost pairing, runtime validation, cancellation
-  signals, explicit demo/live modes, and logging without raw account data.
-- The tests establish cancellation, one-use continuation, balanced changes,
-  and source-reference checks that can be adapted to a bill workflow.
+## First shared interface
 
-The HTTP contract and source layout are not the coordination brief's proposed
-WebSocket contract or pnpm/WXT layout. Reuse selected pieces deliberately;
-do not treat the current relay as the agreed backend architecture.
+`packages/shared/src/index.ts` is the executable contract. Browser and UI sockets authenticate with `hello`; the API key never enters this protocol. A browser sends its supported-tab inventory and context only for its selected workspace. The server sends `browser.watch`, `browser.command`, `browser.cancel`, and state updates.
 
-## Current Gate contract
+Every command contains workspace/task/command IDs, a tab/frame target, phase, and expected document/page versions. Responses explicitly report success with a fresh observation or failure with `not_executed`/`unknown`. Unknown outcomes fail the task. Reconnection does not replay commands.
 
-`POST /api/gate` receives `requestId`, `fingerprint`, `packVersion`, and a
-validated journal entry. It returns those identifiers, a structured verdict,
-and mode/model/timing/token metadata. All API routes except health require
-`X-Close-Copilot-Token`. `GET /api/pack` supplies synthetic source records.
+Generic investigation writes are limited to search/filter fields. Preparation goes through `prepare_selected_bill`: arguments contain only the selected tab; approved invoice values are fixed in the backend closure. Save/Submit and other sensitive controls are blocked in the page runtime independently of model instructions.
 
-For UI integration, the page adapter supplies:
+For contract changes, edit the shared schema and both endpoints together; run `pnpm check:ambient` and `pnpm test:ambient-browser`.
 
-```ts
-interface FormAdapter {
-  read(): Entry;
-  save(): void;
-  apply(changes: Change[], signal: AbortSignal): Promise<void>;
-}
-```
+## Remaining integration work
 
-`save` must invoke the native application's validated Save path exactly once.
-This is proven only for the synthetic form. It is not a production adapter.
+The real NetSuite/Gmail/Sheets profile has not been inspected by this task. The generic adapter intentionally stops when controls cannot be identified uniquely. Real NetSuite vendor widgets, amount/line handling, required custom fields and frames need observed-page adapters if they differ from semantic HTML controls. Gmail attachments and canvas-only Sheets content are not yet extracted.
 
-## NetSuite investigation still required
+Prepare the dedicated logged-in profile and actual sample invoice. Confirm the expected expense account, tax and posting period. Validate a read-only investigation before attempting unsaved preparation. Review unsupported fields manually; this version never submits a bill.
 
-The sandbox origin is configured locally in `.env`. The real page has not
-yet been inspected. Once the workflow is settled, inspect its actual route,
-form, field labels, line handling, Save variants, and frames using the demo
-Chrome profile. Decide whether the first adapter is for a vendor bill or a
-journal entry before writing selectors.
-
-For the ambient bill workflow, jointly define context, suggestion, command,
-and tool-result messages with workspace IDs, task IDs, command IDs, page
-versions, success/error discriminants, and selected-tab boundaries. Confirm
-Gmail demo access and default search scope. Optional Sheets support can wait.
-
-## Inputs needed
-
-- Julie/Philipp: confirm which workflow supersedes the other.
-- Julie/Philipp: assign extension and backend owners.
-- Julie: configure `OPENAI_API_KEY` locally, then run the access smoke check.
-- Browser owner: prepare the dedicated Chrome profile and logged-in tabs.
-
-No credentials or live account contents belong in the shared coordination
-document or implementation repository.
+No merge or push has been made by this handoff. Local code and planning commits are separate; the planning branch should not be merged into application code.

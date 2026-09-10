@@ -1,21 +1,30 @@
 {
   "name": "close-copilot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "scripts": {
-    "build": "tsx scripts/build.ts",
-    "dev": "npm run build && tsx src/relay/main.ts",
-    "start": "tsx src/relay/main.ts",
+    "build": "pnpm --filter @close/workbench build && pnpm --filter @close/extension build",
+    "dev": "pnpm run build && pnpm --filter @close/server start",
+    "start": "pnpm --filter @close/server start",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
     "eval:gate": "tsx eval/gate.ts",
-    "check": "npm run typecheck && npm test && npm run build",
-    "smoke:live": "tsx scripts/smoke-live.ts"
+    "check": "pnpm typecheck && pnpm test && pnpm check:ambient",
+    "smoke:live": "tsx scripts/smoke-live.ts",
+    "journal:dev": "pnpm journal:build && tsx src/relay/main.ts",
+    "journal:build": "tsx scripts/build.ts",
+    "journal:start": "tsx src/relay/main.ts",
+    "typecheck:ambient": "tsc -p tsconfig.ambient.json --noEmit && pnpm --filter @close/extension typecheck",
+    "test:ambient": "tsx --test packages/shared/tests/*.test.ts apps/server/tests/*.test.ts",
+    "test:ambient-browser": "playwright test -c playwright.ambient.config.ts",
+    "check:ambient": "pnpm run typecheck:ambient && pnpm run test:ambient && pnpm run build",
+    "demo:record": "playwright test -c playwright.ambient.config.ts demo.spec.ts",
+    "open": "tsx scripts/open-workbench.ts"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
@@ -26,8 +35,13 @@
     "@playwright/test": "^1.63.0",
     "@types/chrome": "^0.2.9",
     "@types/node": "^22.20.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
     "esbuild": "^0.28.2",
+    "prettier": "^3.9.6",
     "tsx": "^4.23.13",
-    "typescript": "^7.0.2"
-  }
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "packageManager": "pnpm@11.19.0"
 }

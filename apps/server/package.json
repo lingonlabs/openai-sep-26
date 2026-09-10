@@ -1,0 +1,27 @@
+{
+  "name": "@close/server",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts"
+  },
+  "dependencies": {
+    "@close/shared": "workspace:*",
+    "@openai/agents": "0.17.2",
+    "fastify": "^5.8.0",
+    "@fastify/websocket": "^11.2.0",
+    "@fastify/static": "^9.0.0",
+    "@fastify/cors": "^11.2.0",
+    "dotenv": "^17.4.2",
+    "sql.js": "^1.14.0",
+    "ws": "^8.19.0",
+    "zod": "^4.6.1",
+    "openai": "^7.13.0"
+  },
+  "devDependencies": {
+    "@types/sql.js": "^1.4.9",
+    "@types/ws": "^8.18.1"
+  },
+  "version": "0.2.0",
+  "private": true,
+  "type": "module"
+}
