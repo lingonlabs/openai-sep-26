@@ -89,7 +89,7 @@ passed that check. Preserve this rule during all later dependency changes.
 
 | Prototype | Branch / PR | Status | Next step / blocker |
 | --- | --- | --- | --- |
-| Ambient local | `prototype/ambient-local`, `ce86272` | Sheet cells read successfully via real screenshot; added periodic visual watcher; 42 tests pass | Reload and verify baseline/new vendor offer; continue invoice task; teammate styling branches from `e7745b1` |
+| Ambient local | `prototype/ambient-local`, `15661bf` | Julie's Lingon styling reviewed and fast-forwarded; 42 tests pass; live Sheet visual baselines verified | Reload branded extension; next proposed improvements are full Sheet cell reading and Follow agent |
 | Teammate prototype | — | Awaiting teammate update | Record branch and comparison-ready milestone |
 
 ## Handoff log
@@ -176,3 +176,12 @@ Append concise entries: date, owner, commit/PR, changes, verification, next step
   Backend restarted; awaiting extension reload and live new-row test. No styles
   or dependencies changed. Teammate is preparing styling on another branch from
   `e7745b1`; retain those changes when integrating the capture work.
+- 2026-09-10 — Reviewed `julie/lingon-styling-preview` at `15661bf` in an isolated
+  checkout, then fast-forwarded and pushed `prototype/ambient-local` to it. Julie
+  based the final branch on `ce86272`, including the visual watcher. All 42 tests,
+  types, and build pass. Browser review verified branded activity/findings,
+  popup acceptance, Stop, and PDF confirmation returning to working state. Core
+  execution, monitoring, shared contracts, permissions, and lockfile are unchanged.
+  Main extension rebuilt and backend restarted while idle. Reload the existing
+  extension to see Lingon Labs branding; continue future work from `15661bf`.
+  Live Sheet screenshot baselines were also confirmed through local extension state.
