@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Product, architecture, and delivery brief for an ambient finance close assistant powered by Astra and the OpenAI Agents SDK.">
+  <title>Ambient Close Assistant — Project Brief</title>
+  <style>
+    :root { --ink:#17283a; --muted:#536476; --blue:#245ed6; --line:#dce3ec; --paper:#fff; --wash:#f3f6fa; --green:#18765c; }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; scroll-padding-top:24px; }
+    body { margin:0; background:var(--wash); color:var(--ink); font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    a { color:var(--blue); text-underline-offset:3px; }
+    a:focus-visible { outline:3px solid #e6a337; outline-offset:4px; border-radius:3px; }
+    .layout { display:grid; grid-template-columns:248px minmax(0,1fr); max-width:1540px; margin:auto; }
+    aside { position:sticky; top:0; height:100vh; overflow:auto; padding:38px 24px; border-right:1px solid var(--line); }
+    .brand { font-size:13px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+    .brand span { display:block; color:var(--blue); }
+    .version { margin:14px 0 30px; font-size:12px; color:var(--muted); }
+    nav a { display:block; padding:7px 0; text-decoration:none; color:var(--muted); font-size:13px; line-height:1.4; }
+    nav a:hover { color:var(--blue); }
+    nav b { display:inline-block; width:25px; color:#8393a6; font-size:11px; }
+    main { min-width:0; padding:34px 56px 70px; }
+    header { background:var(--ink); color:white; padding:48px; border-radius:18px; position:relative; overflow:hidden; }
+    .eyebrow { font-size:11px; text-transform:uppercase; font-weight:800; letter-spacing:.16em; color:var(--blue); margin:0 0 12px; }
+    header .eyebrow { color:#9cbcff; }
+    h1 { font-size:clamp(36px,4.4vw,62px); line-height:1.06; letter-spacing:-.045em; margin:0 0 22px; max-width:700px; }
+    header p { max-width:660px; color:#d6e1ee; font-size:18px; }
+    .tags { display:flex; flex-wrap:wrap; gap:8px; margin-top:28px; }
+    .tag { display:inline-block; padding:5px 11px; font-size:12px; border:1px solid #596b81; border-radius:30px; color:#e2ebf6; }
+    .status { display:flex; flex-wrap:wrap; gap:12px 30px; border-bottom:1px solid var(--line); padding:22px 0; margin-bottom:14px; color:var(--muted); font-size:13px; }
+    .status strong { color:var(--ink); }
+    section { padding:38px 0; border-bottom:1px solid var(--line); }
+    h2 { font-size:28px; letter-spacing:-.025em; line-height:1.2; margin:0 0 22px; }
+    h3 { font-size:18px; line-height:1.35; margin:27px 0 9px; }
+    p { margin:0 0 15px; }
+    li { margin:7px 0; }
+    ul,ol { padding-left:22px; }
+    .lead { font-size:19px; max-width:800px; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin:22px 0; }
+    .card { background:white; border:1px solid var(--line); border-radius:12px; padding:23px; min-width:0; }
+    .card h3 { margin:0 0 10px; }
+    .card p:last-child { margin:0; }
+    .callout { border-left:3px solid var(--blue); background:#eaf0fd; padding:18px 22px; margin:22px 0; border-radius:0 10px 10px 0; }
+    .callout p:last-child { margin:0; }
+    .label { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:var(--green); display:block; margin-bottom:8px; }
+    .label.proposed { color:#976009; }
+    .label.open { color:var(--muted); }
+    .table-wrap { overflow-x:auto; margin:20px 0; border:1px solid var(--line); border-radius:10px; background:white; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.055em; background:#eaf0f7; color:#42536a; }
+    th,td { padding:14px 16px; border-bottom:1px solid var(--line); vertical-align:top; }
+    tr:last-child td { border-bottom:0; }
+    td:first-child { font-weight:650; }
+    code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.85em; overflow-wrap:anywhere; }
+    pre { padding:24px; background:#17283a; color:#dce7f5; border-radius:12px; overflow:auto; font-size:13px; line-height:1.8; }
+    pre code { font-size:inherit; overflow-wrap:normal; }
+    .steps { list-style:none; padding:0; counter-reset:steps; }
+    .steps li { counter-increment:steps; position:relative; padding:0 0 24px 48px; margin:0; }
+    .steps li::before { content:counter(steps,decimal-leading-zero); position:absolute; left:0; top:0; width:31px; height:31px; border-radius:50%; background:#dfe9fc; color:var(--blue); font-size:11px; font-weight:800; display:grid; place-items:center; }
+    .steps strong { display:block; margin-bottom:3px; }
+    .steps p { margin:0; }
+    .quote { font-size:20px; line-height:1.45; font-weight:600; color:var(--ink); }
+    .architecture { margin:25px 0; padding:26px; border:1px solid var(--line); background:white; border-radius:12px; }
+    .arch-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+    .arch-box { border:1px solid #bacbe4; border-radius:8px; padding:16px; text-align:center; background:#f1f5fd; }
+    .arch-box strong { display:block; font-size:14px; }
+    .arch-box span { display:block; font-size:12px; color:var(--muted); margin-top:5px; }
+    .arch-arrow { text-align:center; color:var(--muted); padding:12px 0; font-size:12px; }
+    .arch-wide { background:#17283a; color:white; }
+    .arch-wide span { color:#d6e1ee; }
+    .arch-cloud { border-style:dashed; background:white; }
+    .caption { font-size:12px; color:var(--muted); margin:12px 0 0; }
+    .mock { border:1px solid var(--line); padding:24px; background:white; border-radius:12px; margin:22px 0; }
+    .mock-top { display:flex; justify-content:space-between; align-items:center; gap:12px; color:var(--muted); font-size:12px; padding-bottom:14px; border-bottom:1px solid var(--line); }
+    .mock-body { display:flex; align-items:center; justify-content:flex-end; gap:12px; min-height:170px; padding:22px 0; }
+    .bubble { padding:18px; border:1px solid #bdceed; border-radius:12px; box-shadow:0 6px 22px #1933580d; max-width:360px; }
+    .bubble p { margin:0 0 12px; font-size:15px; }
+    .demo-button { display:inline-block; font-size:12px; padding:7px 11px; border-radius:6px; color:white; background:var(--blue); margin-right:8px; }
+    .demo-dismiss { font-size:12px; color:var(--muted); }
+    .orb { flex:none; display:grid; place-items:center; width:40px; height:48px; background:#17283a; color:white; border-radius:12px 3px 3px 12px; font-size:21px; }
+    .small { color:var(--muted); font-size:13px; }
+    .sources li { font-size:14px; margin:12px 0; }
+    footer { padding:24px 0 0; font-size:12px; color:var(--muted); }
+    @media(max-width:1050px) { .layout { grid-template-columns:200px minmax(0,1fr); } aside { padding:30px 18px; } main { padding:26px; } header { padding:34px; } }
+    @media(max-width:760px) { .layout { display:block; } aside { position:static; height:auto; padding:22px; border-right:0; border-bottom:1px solid var(--line); } .brand span { display:inline; } .version { margin:6px 0 12px; } nav { display:flex; flex-wrap:wrap; gap:3px 15px; } nav a { font-size:12px; } nav b { display:none; } main { padding:20px 18px 40px; } header { padding:28px; } header p { font-size:16px; } .grid,.arch-row { grid-template-columns:1fr; } h2 { font-size:25px; } .mock { padding:16px; } .mock-body { gap:8px; } th,td { padding:11px; } }
+    @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+    @media print { @page { size:A4; margin:16mm; } body { background:white; font-size:10pt; } .layout { display:block; } aside { display:none; } main { padding:0; } header { padding:24px; background:#eaf0f7; color:#17283a; } header p,header .eyebrow,.tag { color:#17283a; } h1 { font-size:32pt; } h2 { font-size:19pt; } h3 { font-size:13pt; } section { padding:20px 0; } .lead { font-size:12pt; } .card,.callout,.architecture,.mock,pre,tr { break-inside:avoid; } h2,h3 { break-after:avoid; } .table-wrap { overflow:visible; } table { font-size:9pt; } pre { white-space:pre-wrap; font-size:8pt; } a { color:inherit; } .arch-wide { background:#eaf0f7; color:#17283a; } .arch-wide span { color:#536476; } }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside aria-label="Document navigation">
+    <div class="brand">Ambient <span>Close Assistant</span></div>
+    <p class="version">Hackathon project brief<br>10 September 2026 · v0.1</p>
+    <nav aria-label="Contents">
+      <a href="#intent"><b>01</b> Product &amp; scope</a>
+      <a href="#demo"><b>02</b> Demo narrative</a>
+      <a href="#workspace"><b>03</b> Workspace &amp; presence</a>
+      <a href="#architecture"><b>04</b> Architecture</a>
+      <a href="#ambient"><b>05</b> Ambient operation</a>
+      <a href="#memory"><b>06</b> Sessions &amp; delegation</a>
+      <a href="#stack"><b>07</b> Technology stack</a>
+      <a href="#contract"><b>08</b> Browser contract</a>
+      <a href="#local"><b>09</b> Local development</a>
+      <a href="#team"><b>10</b> Team coordination</a>
+      <a href="#delivery"><b>11</b> Delivery milestones</a>
+      <a href="#validation"><b>12</b> Validation &amp; unknowns</a>
+      <a href="#references"><b>13</b> Reference material</a>
+    </nav>
+  </aside>
+  <main>
+    <header>
+      <p class="eyebrow">Astra capabilities showcase / Product + engineering</p>
+      <h1>Help that arrives<br>with the work.</h1>
+      <p>An ambient browser extension for finance leaders: recognize the workflow, offer useful help, and carry an investigation across the applications already open.</p>
+      <div class="tags"><span class="tag">NetSuite sandbox</span><span class="tag">Gmail in browser</span><span class="tag">Agents SDK + Astra</span><span class="tag">Local application</span></div>
+    </header>
+    <div class="status"><span><strong>Status:</strong> agreed direction; implementation pending</span><span><strong>Team:</strong> two developers, separate computers</span><span><strong>Working title:</strong> Ambient Close Assistant</span></div>
+
+    <section id="intent">
+      <p class="eyebrow">01 / Product &amp; scope</p><h2>A finance assistant that notices the moment to help</h2>
+      <p class="lead">The user should be able to begin ordinary work in NetSuite and receive a timely, useful offer from an assistant that understands the surrounding browser workspace.</p>
+      <p>The hackathon showcases Astra’s ability to interpret application context, reason across multiple sources, operate browser interfaces, and produce a reviewable result. The first workflow is vendor bill discovery and preparation within the broader finance close process.</p>
+      <div class="grid">
+        <div class="card"><span class="label">Agreed</span><h3>Initial scope</h3><p>A Chrome extension in a dedicated profile, a selectable workspace of watched tabs, ambient suggestions, and an investigation across a real NetSuite sandbox and demo Gmail account. A Google Sheet of onboarded vendors is optional.</p></div>
+        <div class="card"><span class="label proposed">Scope boundary</span><h3>Keep the first demo focused</h3><p>Build one complete workflow before expanding to the entire close. Hosted deployment, application connectors, application OAuth integrations, and a general library of finance workflows are outside the initial plan.</p></div>
+      </div>
+      <p>All interaction with Gmail, NetSuite, and the optional Sheet uses their browser interfaces and existing logged-in sessions. The application supplies the browser tools; Astra chooses and interprets their use. The model API does not automatically have access to local tabs.</p>
+    </section>
+
+    <section id="demo">
+      <p class="eyebrow">02 / Demo narrative</p><h2>From “Add New Bill” to a prepared entry</h2>
+      <ol class="steps">
+        <li><strong>Select the close workspace.</strong><p>The user chooses the NetSuite sandbox, demo Gmail inbox, and optionally the vendor-onboarding Sheet. Watched pages display a small status icon.</p></li>
+        <li><strong>Begin normal work in NetSuite.</strong><p>The user opens “Add New Bill.” The extension recognizes the form and captures relevant context, including a selected vendor if available. The actual sandbox’s labels and page structure still need inspection.</p></li>
+        <li><strong>Offer a contextual investigation.</strong><p>A small bubble asks: “Check Gmail for invoices that need recording?” The user can accept or dismiss it without opening a separate application.</p></li>
+        <li><strong>Investigate across the selected tabs.</strong><p>Astra searches Gmail for relevant invoice messages, inspects invoice information, checks NetSuite’s existing bills, and consults vendor onboarding where that source is present.</p></li>
+        <li><strong>Present findings with evidence.</strong><p>Show candidates, matching records, amounts and dates where verified, source links, and any remaining ambiguity. A useful seeded scenario contains an already-recorded invoice, a candidate without a matching bill, and an invoice whose vendor needs onboarding.</p></li>
+        <li><strong>Offer to prepare a selected bill.</strong><p>The user selects a candidate. The agent fills the relevant form fields and verifies the result. The prepared entry remains ready for the user’s review before submission.</p></li>
+      </ol>
+      <div class="callout"><p><strong>Evidence matters.</strong> “No match found in the records checked” is different from proving that a bill does not exist. Findings should preserve the search scope and distinguish invoice matching from vendor-onboarding status. The example outcomes above are proposed demo data, not findings from the real accounts.</p></div>
+    </section>
+
+    <section id="workspace">
+      <p class="eyebrow">03 / Workspace &amp; presence</p><h2>A visible, controllable presence on watched tabs</h2>
+      <p>A <strong>workspace</strong> means a named collection of selected browser tabs, such as “September Close.” The side panel provides workspace selection and tab membership controls. Monitoring and agent actions are limited to the active workspace; switching workspaces pauses the previous one.</p>
+      <div class="mock" role="img" aria-label="Illustrative NetSuite page showing a suggestion beside the assistant’s floating icon. This is a design sketch, not a screenshot of the account.">
+        <div class="mock-top"><span>September Close / NetSuite sandbox</span><span>Watching</span></div>
+        <div class="mock-body"><div class="bubble"><p><strong>Entering a new bill?</strong><br>Check Gmail for invoices that need recording?</p><span class="demo-button">Check invoices</span><span class="demo-dismiss">Dismiss</span></div><div class="orb" aria-hidden="true">✦</div></div>
+        <p class="caption">Illustrative interaction. These controls are part of the document sketch, not a working extension.</p>
+      </div>
+      <p>Each watched application page gets a small floating icon on its edge. Clicking it opens the assistant’s side panel. The icon can be repositioned to avoid covering application controls. Its menu offers <strong>Pause this tab</strong>, <strong>Pause workspace</strong>, and <strong>Remove from workspace</strong>.</p>
+      <div class="table-wrap"><table><thead><tr><th>State</th><th>Visible behavior</th><th>User control</th></tr></thead><tbody>
+        <tr><td>Watching</td><td>Quiet icon and status dot.</td><td>Open assistant or pause monitoring.</td></tr>
+        <tr><td>Suggestion available</td><td>Badge and a short contextual bubble.</td><td>Accept, dismiss, or inspect details.</td></tr>
+        <tr><td>Working</td><td>Progress indicator; detailed activity in the side panel.</td><td>Stop the task; review the current result.</td></tr>
+        <tr><td>Paused</td><td>Muted icon with an explicit paused state.</td><td>Resume when ready.</td></tr>
+      </tbody></table></div>
+      <p class="small">Proposed restoration behavior: save workspace definitions and ask the user to re-associate tabs when their identity is uncertain after a restart. Persisted Chrome tab IDs alone are not a durable workspace definition. The visual control is intended for supported application pages, not browser-internal pages.</p>
+    </section>
+
+    <section id="architecture">
+      <p class="eyebrow">04 / Architecture</p><h2>Local control, model-powered decisions</h2>
+      <div class="architecture" role="img" aria-label="Architecture: selected browser tabs connect to the extension UI and browser bridge. A localhost WebSocket connects the extension to a Node backend with Agents SDK and SQLite. The backend calls the remote OpenAI API for Astra inference.">
+        <div class="arch-row"><div class="arch-box"><strong>NetSuite sandbox</strong><span>Bill form &amp; existing records</span></div><div class="arch-box"><strong>Gmail</strong><span>Messages &amp; invoice evidence</span></div><div class="arch-box"><strong>Google Sheet · optional</strong><span>Vendor onboarding</span></div></div>
+        <div class="arch-arrow">↕ page observations and browser actions</div>
+        <div class="arch-box"><strong>Chrome extension</strong><span>Workspace picker · floating icon · side panel · observers · browser tool bridge</span></div>
+        <div class="arch-arrow">↕ paired localhost WebSocket</div>
+        <div class="arch-box arch-wide"><strong>Local Node.js backend</strong><span>Agents SDK coordinator + investigation tasks · command routing · SQLite state</span></div>
+        <div class="arch-arrow">↕ model requests, selected observations, and tool results</div>
+        <div class="arch-box arch-cloud"><strong>OpenAI API · Astra</strong><span>Remote inference; API credential stays in the local backend</span></div>
+        <p class="caption">Gmail, NetSuite, and Sheets are remote applications viewed through Chrome. “Local” describes our application runtime and storage, not offline operation.</p>
+      </div>
+      <p>The backend owns agent runs and durable state. The extension executes permitted browser operations and returns observations. A disconnected extension must reconnect to a known task state rather than silently losing the run or replaying prior actions.</p>
+      <h3>Why the Agents SDK</h3>
+      <p>The agreed choice is a purpose-built agent using the <strong>OpenAI Agents SDK in TypeScript</strong>. It provides the agent loop, tools, tracing, session support, and resumable run state. Codex app-server was considered for reusing a broader coding-agent runtime, but the current project centers on browser workflows and a custom product experience. A direct Responses API loop remains possible but would require more orchestration code.</p>
+      <p>Our browser bridge is required with any of these harnesses. Astra supports custom UI tools; the official computer-use guidance recommends code execution for Astra. We will begin with a small typed tool surface, then consider a constrained code-execution runtime if the demo needs richer action sequences. Such a runtime is not assumed to be included in the first build.</p>
+    </section>
+
+    <section id="ambient">
+      <p class="eyebrow">05 / Ambient operation</p><h2>Continuous awareness through meaningful events</h2>
+      <p>The ambient experience comes from lightweight page observers and short, purposeful agent runs. Page navigation, entry into a bill form, and vendor selection update workspace state. The backend evaluates useful changes and decides whether to stay quiet, refresh a suggestion, or offer a new task.</p>
+      <div class="callout"><p class="quote">Observe → summarize context → evaluate usefulness → suggest → act when accepted → verify</p></div>
+      <div class="grid">
+        <div class="card"><h3>Local observation</h3><p>Detect relevant page transitions and form context, debounce bursts of changes, and attach a page version. Keep ordinary DOM churn out of the conversation. Send compact observations when they matter.</p></div>
+        <div class="card"><h3>Model judgment</h3><p>Interpret the current workflow and prior interaction. Return a structured decision: no suggestion, update an existing suggestion, or present a new one. A pending suggestion does not itself authorize a takeover.</p></div>
+      </div>
+      <ul>
+        <li><strong>Remember dismissals.</strong> Use cooldowns and context-aware deduplication so the same offer does not keep returning.</li>
+        <li><strong>Ignore self-generated triggers.</strong> Agent actions should not create a loop of new ambient suggestions.</li>
+        <li><strong>Discard stale decisions.</strong> If the user leaves the form while a suggestion is being generated, re-evaluate its relevance before displaying it.</li>
+        <li><strong>Separate watching from acting.</strong> Ambient evaluation observes; an accepted task can request the browser controls needed for its scope.</li>
+        <li><strong>Report real state.</strong> Paused, disconnected, and working should be distinguishable. Background tabs can be throttled or discarded, so the interface should not claim perfect continuous observation.</li>
+      </ul>
+      <p>Chrome’s extension service worker is event-driven and may stop when idle. We will persist needed state and use reconnectable messaging, with the ongoing agent task owned by the backend.</p>
+    </section>
+
+    <section id="memory">
+      <p class="eyebrow">06 / Sessions &amp; delegation</p><h2>One workspace coordinator, focused task histories</h2>
+      <div class="table-wrap"><table><thead><tr><th>State layer</th><th>Contents</th><th>Purpose</th></tr></thead><tbody>
+        <tr><td>Workspace state</td><td>Selected tabs, latest context, page versions, monitoring preferences, active task IDs.</td><td>Keep an up-to-date picture outside the transcript.</td></tr>
+        <tr><td>Coordinator history</td><td>User conversations, useful context summaries, suggestions, dismissals, accepted work, summarized findings.</td><td>Maintain one coherent assistant presence per workspace.</td></tr>
+        <tr><td>Task history</td><td>Detailed searches, screenshots, invoice evidence, comparisons, tool calls, and form actions.</td><td>Support a bounded investigation and later continuation.</td></tr>
+      </tbody></table></div>
+      <p>When the user accepts a suggestion, the backend creates an investigation task with an explicit goal and permitted workspace. It receives the relevant context, performs the work, and returns structured findings to the coordinator. The coordinator preserves a summary and task reference; the detailed history remains available when the user asks to prepare a bill.</p>
+      <p>The SDK supports sessions and agents-as-tools, allowing a main agent to retain control while invoking a specialist. The application must implement task IDs, parent-child relationships, storage, and continuation rules. These relationships are not automatic “subsessions.” Start with one coordinator and one bill-investigation agent; add specialists when they need meaningfully different tools or responsibilities.</p>
+      <p><strong>Concurrency rule:</strong> one agent controls the browser within a workspace at a time. Serialize changes to coordinator history. On cancellation, stop scheduling browser commands, discard queued actions, and reconcile any action already in flight before resuming. A click already delivered to a page cannot be retroactively cancelled.</p>
+    </section>
+
+    <section id="stack">
+      <p class="eyebrow">07 / Technology stack</p><h2>TypeScript from the side panel to the agent</h2>
+      <div class="table-wrap"><table><thead><tr><th>Layer</th><th>Selected direction</th><th>Role</th></tr></thead><tbody>
+        <tr><td>Extension</td><td>WXT + React + TypeScript; Manifest V3</td><td>Development workflow, extension entrypoints, application UI.</td></tr>
+        <tr><td>Styling</td><td>Tailwind CSS + shadcn/ui</td><td>Consistent side panel, workspace controls, findings, and review surfaces.</td></tr>
+        <tr><td>Agent</td><td>OpenAI Agents SDK + Astra</td><td>Coordinator, tools, investigation runs, continuation, and tracing.</td></tr>
+        <tr><td>Backend</td><td>Node.js + Fastify</td><td>Run ownership, local API, command routing, and credentials.</td></tr>
+        <tr><td>Transport</td><td>WebSocket</td><td>Bidirectional commands, observations, progress, and stop requests.</td></tr>
+        <tr><td>Browser access</td><td>Chrome tab APIs, content scripts, chrome.debugger</td><td>Navigation, context detection, page inspection, screenshots, and input.</td></tr>
+        <tr><td>Contracts</td><td>Shared Zod schemas</td><td>Runtime validation of both requests and results.</td></tr>
+        <tr><td>Persistence</td><td>SQLite initially</td><td>Workspace definitions, task state, findings, and action records.</td></tr>
+        <tr><td>Repository</td><td>pnpm workspaces</td><td>Separate extension/backend packages with shared contracts.</td></tr>
+      </tbody></table></div>
+      <p>Use deterministic code for arithmetic and invoice comparison fields. Let Astra interpret documents, reason about discrepancies, and explain the evidence. Exact dependency versions and database adapters will be pinned during scaffolding; this document is not an installation manifest.</p>
+    </section>
+
+    <section id="contract">
+      <p class="eyebrow">08 / Browser contract</p><h2>The interface that lets both developers move independently</h2>
+      <p>Agree on the first schemas before building either side deeply. The extension owns execution; the backend owns intent and interpretation. Tool names below are illustrative contracts to finalize together.</p>
+      <div class="table-wrap"><table><thead><tr><th>Message family</th><th>Examples</th><th>Important fields</th></tr></thead><tbody>
+        <tr><td>Context event</td><td>Page changed, bill form opened, vendor selected.</td><td>Workspace, tab, event ID, observed time, page version, relevant context.</td></tr>
+        <tr><td>Browser command</td><td>List tabs, inspect page, click, type, capture screenshot.</td><td>Command ID, task ID, workspace, target tab, expected page version, validated arguments.</td></tr>
+        <tr><td>Tool result</td><td>Observation, screenshot, completed input, explicit failure.</td><td>Matching command ID, success/error status, current page version, observation.</td></tr>
+        <tr><td>UI event</td><td>Suggestion, progress, finding, review request, stopped.</td><td>Workspace/task association, visible content, evidence references, available user actions.</td></tr>
+      </tbody></table></div>
+      <h3>Operational rules</h3>
+      <p>Validate workspace membership and current page state at execution time. A browser command needs a clear result, including errors. Do not blindly replay clicks or form submissions after a reconnect; use command IDs and outcome checks. Retain references to the observations behind each finding so the user can inspect the source.</p>
+      <p class="small">The browser bridge will need real-page testing for NetSuite form controls, Gmail search and invoice attachments, frames, and the optional Sheet. A generic “click” tool alone is not a complete application integration.</p>
+    </section>
+
+    <section id="local">
+      <p class="eyebrow">09 / Local development</p><h2>Each computer runs a complete local application</h2>
+      <p>Install the unpacked extension only in the prepared demo Chrome profile. Run the Node backend and SQLite database locally. Keep the OpenAI API key in backend environment configuration excluded from Git. NetSuite and Gmail use the profile’s own logins.</p>
+      <div class="grid"><div class="card"><h3>Local to each developer</h3><p>Extension installation, browser profile and cookies, API credentials, pairing token, SQLite database, and task artifacts. Bind the backend to <code>127.0.0.1</code> and pair the extension with a local token and origin checks.</p></div><div class="card"><h3>Shared through Git</h3><p>Application source, shared schemas, setup instructions, reproducible test fixtures without account contents, architecture documents, and coordination updates. Sharing code does not share a running browser session.</p></div></div>
+      <p>No hosted application accounts or Gmail/NetSuite OAuth integration are needed for the initial demo. Astra still runs through the remote OpenAI API, and the selected observations supplied to it leave the machine. SDK tracing should be explicitly configured with that data flow in mind.</p>
+      <h3>Proposed source layout</h3>
+      <pre><code>openai-sep-26/
+  apps/
+    extension/       # WXT, UI, observers, browser tools
+    server/          # Fastify, Agents SDK, local persistence
+  packages/
+    shared/          # Zod schemas and shared types
+  docs/              # Implementation documentation
+  .env.example       # Names and placeholders, never credentials</code></pre>
+      <p class="small">This is a planned structure. At the time of writing, the repository contains planning documents; the application packages have not been scaffolded. API/model access and local tooling still need a first-run verification.</p>
+    </section>
+
+    <section id="team">
+      <p class="eyebrow">10 / Team coordination</p><h2>Split implementation at the browser boundary</h2>
+      <div class="grid"><div class="card"><span class="label open">Owner to assign</span><h3>Extension workstream</h3><p>Workspace and tab selection, floating icon, side panel, observers, actual NetSuite screen detection, browser tools, and the WebSocket client. Prove inspection and actions in the demo profile.</p></div><div class="card"><span class="label open">Owner to assign</span><h3>Agent/backend workstream</h3><p>Coordinator, suggestion evaluation, task history, bill investigation, persistence, and the WebSocket server. Develop against recorded or synthetic observations until the live bridge is ready.</p></div></div>
+      <p>Jointly own the schemas and the complete demo. Changes to shared contracts should be agreed before each side implements them. Keep early integration small: one genuine page event, one returned suggestion, then one agent-requested browser action.</p>
+      <h3>A separate coordination branch and worktree</h3>
+      <p>The chosen collaboration direction is a shared <code>coordination</code> branch, checked out in a separate worktree on each computer. Implementation continues in individual feature branches, integrated through small pull requests.</p>
+      <pre><code>code/
+  openai-sep-26/         # Individual implementation branch
+  openai-sep-26-coord/   # Shared coordination branch</code></pre>
+      <ul>
+        <li>Keep <code>COORDINATION.md</code> and <code>docs/project-brief.html</code> on the coordination branch as the shared status record and project plan. Give each developer an owned status section.</li>
+        <li>Pull coordination updates before work. Commit and push updates at milestones. If the remote moved, pull with rebase, resolve any conflict, and retry; do not force-push.</li>
+        <li>Include code commit or PR references in handoffs so claimed progress points to a reviewable implementation.</li>
+        <li>Point each coding agent at the coordination worktree’s file. Do not rely on a stale copy in a feature branch.</li>
+        <li>Keep implementation-specific schemas and setup documentation with code. Do not merge the coordination branch into implementation branches.</li>
+      </ul>
+      <div class="callout"><p><strong>Planning worktree established:</strong> both planning documents are in the separate <code>openai-sep-26-coord</code> worktree on <code>coordination</code>, prepared for its initial publication. The remote was empty when this branch was created, so the coordination branch has its own initial history. The original implementation worktree remains on unborn <code>main</code>; its initial code commit and application scaffolding are still pending.</p></div>
+    </section>
+
+    <section id="delivery">
+      <p class="eyebrow">11 / Delivery milestones</p><h2>Prove a complete slice before expanding</h2>
+      <p>The sequence below is a proposed delivery plan. It has no assumed deadline or effort estimate; owners and hackathon time constraints remain to be assigned.</p>
+      <div class="table-wrap"><table><thead><tr><th>Milestone</th><th>Work</th><th>Acceptance evidence</th></tr></thead><tbody>
+        <tr><td>1 · Foundation</td><td>Set up branches/worktrees, package layout, first shared schemas, local server, and extension.</td><td>Both developers can run the same setup; extension pairs with its own backend; first Astra request succeeds.</td></tr>
+        <tr><td>2 · Ambient presence</td><td>Workspace selection, watched-page icon, page observer, bill-screen event, suggestion response.</td><td>Opening the real NetSuite bill form produces a single contextual suggestion; dismissal is remembered.</td></tr>
+        <tr><td>3 · Browser round trip</td><td>Inspect a selected tab, perform an action, and return the resulting observation.</td><td>Agent-requested action is visible and verified; stale or out-of-workspace requests fail explicitly.</td></tr>
+        <tr><td>4 · Investigation</td><td>Gmail search, invoice inspection, NetSuite comparison, optional vendor-sheet lookup.</td><td>Seeded examples produce explainable findings, source references, and honest search limitations.</td></tr>
+        <tr><td>5 · Bill preparation</td><td>Resume a selected finding, populate the bill form, and verify field values.</td><td>Correct candidate is prepared for review; no unintended submission or duplicate entry occurs.</td></tr>
+        <tr><td>6 · Rehearsal</td><td>Run the complete sequence; exercise pause, stop, navigation changes, and reconnects.</td><td>The demo is repeatable, the current state is visible, and failures leave the user able to recover.</td></tr>
+      </tbody></table></div>
+      <p><strong>Smallest valuable demo:</strong> notice the new-bill context, offer help, search the real Gmail tab, and explain a candidate using NetSuite evidence. Optional Sheet support and broader finance workflows should follow a reliable core sequence.</p>
+    </section>
+
+    <section id="validation">
+      <p class="eyebrow">12 / Validation &amp; unknowns</p><h2>Test the parts the real accounts will decide</h2>
+      <p>The overall architecture is feasible. The main uncertainty is the reliability of browser interaction in the actual applications, followed by the timing and restraint of ambient suggestions. No real-account browser integration has been tested yet.</p>
+      <div class="table-wrap"><table><thead><tr><th>Question</th><th>First verification</th></tr></thead><tbody>
+        <tr><td>Can we recognize the bill screen?</td><td>Inspect the sandbox’s real route, form structure, vendor field, frames, and transitions.</td></tr>
+        <tr><td>Can we read the invoice evidence?</td><td>Try the demo Gmail searches and representative attachments; identify browser rendering or download handling required.</td></tr>
+        <tr><td>What counts as a plausible duplicate?</td><td>Agree on comparison fields and search scope; include vendor, invoice number, dates, currency, and amounts where available.</td></tr>
+        <tr><td>What does the vendor sheet contain?</td><td>Confirm whether it is included and inspect its columns, status meanings, and readable browser representation.</td></tr>
+        <tr><td>How should ambient suggestions behave?</td><td>Exercise dismissals, repeated visits, vendor changes, workspace switches, and user navigation during evaluation.</td></tr>
+        <tr><td>Can tasks stop and resume safely?</td><td>Interrupt during reads and form filling; disconnect the bridge; verify that completed actions are not replayed.</td></tr>
+      </tbody></table></div>
+      <h3>Implementation principles</h3>
+      <p>Enforce selected-workspace boundaries in code. Treat page and email content as evidence, not instructions that can expand the task. Keep source references and use deterministic calculations. Keep bill submission as a deliberate user review step. Verify effects in the application rather than trusting a model’s claim that an action succeeded.</p>
+      <h3>Outstanding decisions</h3>
+      <p>Assign the two implementation owners; inspect the actual tabs; confirm the optional Sheet and demo invoice set; define a default search period and scope; select package versions; establish API access; and settle workspace restoration and history retention behavior. These can be resolved during the first milestones without redesigning the stack.</p>
+    </section>
+
+    <section id="references">
+      <p class="eyebrow">13 / Reference material</p><h2>Official implementation starting points</h2>
+      <p class="small">Sources consulted during planning. They support the platform capabilities; the architecture and milestone choices are project recommendations. API details should be checked against the versions installed during implementation.</p>
+      <ol class="sources">
+        <li><a href="https://developers.openai.com/api/docs/guides/agents/quickstart">OpenAI Agents SDK quickstart</a> — TypeScript agent setup, tools, state, and tracing.</li>
+        <li><a href="https://developers.openai.com/api/docs/guides/agents/results">Agents SDK results and state</a> — sessions, history, continuation, and resumable runs.</li>
+        <li><a href="https://developers.openai.com/api/docs/guides/agents/orchestration">Orchestration and handoffs</a> — agents-as-tools and specialist ownership.</li>
+        <li><a href="https://developers.openai.com/api/docs/guides/tools-computer-use">OpenAI computer-use guide</a> — application-owned execution, custom UI tools, screenshots, and verification.</li>
+        <li><a href="https://developers.openai.com/codex/app-server">Codex app-server</a> — the alternative harness considered during planning.</li>
+        <li><a href="https://wxt.dev/guide/introduction.html">WXT introduction</a> — extension framework and development conventions.</li>
+        <li><a href="https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts">Chrome content scripts</a> and <a href="https://developer.chrome.com/docs/extensions/reference/api/sidePanel">side-panel API</a> — page observation, injected controls, and the assistant surface.</li>
+        <li><a href="https://developer.chrome.com/docs/extensions/reference/api/debugger">Chrome debugger API</a> — tab-targeted DevTools Protocol access and permissions.</li>
+        <li><a href="https://developer.chrome.com/docs/extensions/develop/concepts/service-workers">Extension service workers</a> and <a href="https://developer.chrome.com/docs/extensions/develop/concepts/network-requests">network requests</a> — event-driven background execution and backend communication.</li>
+        <li><a href="https://support.google.com/chrome/answer/2364824">Chrome profiles</a> — separate profile setup for the demo.</li>
+      </ol>
+    </section>
+    <footer>Prepared from the project planning conversation · 10 September 2026 · Standalone HTML with embedded styling, no external assets, and print layout. Repository: <a href="https://github.com/lingonlabs/openai-sep-26">lingonlabs/openai-sep-26</a>.</footer>
+  </main>
+</div>
+</body>
+</html>
