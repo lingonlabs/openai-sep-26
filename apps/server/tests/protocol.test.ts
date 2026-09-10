@@ -379,3 +379,153 @@ test("an uncertain vendor save locks repeat creation, including after restart", 
     store.close();
   }
 });
+
+test("suggestions are quiet within a bill visit and return after a new visit", async () => {
+  const { manager, store, w } = await harness();
+  try {
+    const context = {
+      tabId: "ns",
+      frameId: 0,
+      documentId: "doc",
+      pageVersion: 1,
+      url: "http://127.0.0.1:4318/demo/netsuite",
+      title: "New Bill",
+      app: "netsuite" as const,
+      workflow: "bill_form" as const,
+      vendor: null,
+      observedAt: new Date().toISOString(),
+      source: "user" as const,
+      visitId: "visit-a",
+    };
+    manager.context("browser", w.id, context);
+    await new Promise((resolve) => setImmediate(resolve));
+    const first = manager
+      .state()
+      .suggestions.find((s) => s.status === "pending")!;
+    assert.ok(first);
+    await manager.request("suggestion.dismiss", { suggestionId: first.id });
+    manager.context("browser", w.id, { ...context, pageVersion: 2 });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      manager.state().suggestions.filter((s) => s.status === "pending").length,
+      0,
+    );
+    manager.context("browser", w.id, { ...context, workflow: "bill_list" });
+    manager.context("browser", w.id, { ...context, visitId: "visit-b" });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(
+      manager.state().suggestions.filter((s) => s.status === "pending").length,
+      1,
+    );
+  } finally {
+    manager.close();
+    store.close();
+  }
+});
+
+test("conversation follow-ups reuse completed history only within their workspace", async () => {
+  const { manager, store, w } = await harness();
+  try {
+    const first = (await manager.request("chat.send", {
+      workspaceId: w.id,
+      message: "Review the totals",
+    })) as Task;
+    await new Promise((resolve) => setImmediate(resolve));
+    const history = [{ role: "user", content: "Known earlier question" }];
+    store.put("session", `task:${first.id}`, history);
+    const second = (await manager.request("chat.send", {
+      workspaceId: w.id,
+      message: "What about that invoice?",
+      parentTaskId: first.id,
+    })) as Task;
+    assert.equal(second.parentTaskId, first.id);
+    assert.deepEqual(store.get("session", `task:${second.id}`), history);
+    await new Promise((resolve) => setImmediate(resolve));
+    await assert.rejects(
+      manager.request("chat.send", {
+        workspaceId: w.id,
+        message: "Read someone else's task",
+        parentTaskId: "unrelated",
+      }),
+      /outside this workspace/,
+    );
+  } finally {
+    manager.close();
+    store.close();
+  }
+});
+
+test("workspace editing supports one app and Chrome restart clears stale tab IDs", async () => {
+  const { manager, store, w } = await harness();
+  try {
+    const edited = (await manager.request("workspace.update", {
+      workspaceId: w.id,
+      name: "NetSuite review",
+      bridgeId: "browser",
+      tabIds: ["ns"],
+      searchFrom: w.searchFrom,
+      searchTo: w.searchTo,
+    })) as Workspace;
+    assert.equal(edited.id, w.id);
+    assert.deepEqual(edited.tabIds, ["ns"]);
+    const task = (await manager.request("chat.send", {
+      workspaceId: w.id,
+      message: "Inspect this app",
+    })) as Task;
+    assert.equal(task.kind, "chat");
+    await new Promise((resolve) => setImmediate(resolve));
+    await assert.rejects(
+      manager.request("investigation.start", { workspaceId: w.id }),
+      /NetSuite and Gmail/,
+    );
+    store.put("browserSession", "browser", "old-session");
+    manager.disconnected("browser");
+    manager.connected({
+      id: "browser",
+      name: "Chrome",
+      synthetic: true,
+      sessionId: "new-session",
+      activeWorkspaceId: null,
+      tabs: [],
+      send: () => {},
+    });
+    assert.deepEqual(store.get<Workspace>("workspace", w.id)!.tabIds, []);
+    assert.equal(store.get<Workspace>("workspace", w.id)!.paused, true);
+  } finally {
+    manager.close();
+    store.close();
+  }
+});
+
+test("command error details remain visible after a successful recovery", async () => {
+  const { manager, store, broker, w, commands } = await harness();
+  try {
+    const task = (await manager.request("investigation.start", {
+      workspaceId: w.id,
+    })) as Task;
+    await new Promise((resolve) => setImmediate(resolve));
+    const command = commands[0];
+    assert.ok(command);
+    broker.receive("browser", {
+      type: "browser.result",
+      commandId: command.commandId,
+      workspaceId: w.id,
+      taskId: task.id,
+      status: "error",
+      code: "STALE_PAGE",
+      message: "The search target changed",
+      outcome: "not_executed",
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const activity = manager
+      .state()
+      .activities.find((a) => a.commandId === command.commandId)!;
+    assert.equal(activity.status, "error");
+    assert.equal(activity.error, "The search target changed");
+    assert.equal(activity.level, "error");
+  } finally {
+    manager.close();
+    await new Promise((resolve) => setImmediate(resolve));
+    store.close();
+  }
+});

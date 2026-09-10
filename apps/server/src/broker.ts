@@ -10,8 +10,9 @@ import type {
   Task,
   Workspace,
   VendorDraft,
+  Activity,
 } from "@close/shared";
-import { supportedApp } from "@close/shared";
+import { supportedApp, tabScope, withinScope } from "@close/shared";
 import { Store } from "./store.js";
 
 export interface BrowserConnection {
@@ -20,6 +21,7 @@ export interface BrowserConnection {
   synthetic: boolean;
   tabs: BrowserTab[];
   activeWorkspaceId: string | null;
+  sessionId?: string;
   send: (message: unknown) => void;
 }
 interface Pending {
@@ -34,8 +36,12 @@ export class BrowserBroker {
   readonly browsers = new Map<string, BrowserConnection>();
   private pending = new Map<string, Pending>();
   private observations = new Map<string, Observation>();
-  onActivity: (workspaceId: string, taskId: string, message: string) => void =
-    () => {};
+  onActivity: (
+    workspaceId: string,
+    taskId: string,
+    message: string,
+    event?: Partial<Activity>,
+  ) => void = () => {};
   onChange: () => void = () => {};
   constructor(
     private store: Store,
@@ -84,6 +90,11 @@ export class BrowserBroker {
       throw new Error("The workspace browser is disconnected");
     if (!supportedApp(tab.url, this.sandboxOrigin, this.localOrigin))
       throw new Error("Tab has navigated outside the permitted applications");
+    const scope = workspace.tabScopes?.[tabId] ?? tabScope(tab.url);
+    if (!scope || !withinScope(tab.url, scope))
+      throw new Error("Tab left its selected account or document.");
+    if (action.kind === "navigate" && !withinScope(action.url, scope))
+      throw new Error("Navigation leaves the selected account or document.");
     if (
       ["check_vendor", "prepare_vendor"].includes(action.kind) &&
       (task.kind !== "vendor_setup" || tab.app !== "netsuite")
@@ -162,20 +173,53 @@ export class BrowserBroker {
       expectedPageVersion:
         action.kind === "inspect" ? null : before!.context.pageVersion,
       action,
+      scope,
     };
     this.store.put("command", command.commandId, {
       ...command,
       status: "sent",
       sentAt: new Date().toISOString(),
     });
+    const target =
+      "elementId" in action
+        ? before?.elements.find((e) => e.id === action.elementId)?.label
+        : undefined;
+    const app =
+      tab.app === "gmail"
+        ? "Gmail"
+        : tab.app === "netsuite"
+          ? "NetSuite"
+          : "Vendor sheet";
+    const verbs = {
+      inspect: "Read",
+      click: "Open",
+      fill: "Search",
+      select: "Set filter in",
+      key: "Press key in",
+      scroll: "Scroll",
+      screenshot: "View screenshot of",
+      navigate: "Navigate in",
+      prepare_bill: "Prepare bill in",
+      check_vendor: "Check vendors in",
+      prepare_vendor: "Prepare vendor in",
+      create_vendor: "Create approved vendor in",
+    };
     this.onActivity(
       workspace.id,
       task.id,
-      action.kind === "inspect"
-        ? `Reading ${tab.title}`
-        : action.kind === "prepare_bill"
-          ? "Preparing the selected bill fields"
-          : `${action.kind === "click" ? "Opening" : action.kind === "fill" ? "Searching" : "Checking"} ${tab.app === "gmail" ? "invoice evidence" : tab.title}`,
+      `${verbs[action.kind]} ${target ? target + " · " : ""}${app}`,
+      {
+        commandId: command.commandId,
+        status: "working",
+        detail:
+          "value" in action
+            ? action.value
+            : action.kind === "key"
+              ? action.key
+              : action.kind === "navigate"
+                ? action.url
+                : undefined,
+      },
     );
     return new Promise((resolve, reject) => {
       const settleError = (message: string) => {
@@ -189,6 +233,11 @@ export class BrowserBroker {
           status: "unknown",
           error: message,
         });
+        this.onActivity(workspace.id, task.id, "Browser action interrupted", {
+          commandId: command.commandId,
+          status: "error",
+          error: message,
+        });
         reject(new Error(message));
       };
       const onAbort = () =>
@@ -198,7 +247,7 @@ export class BrowserBroker {
           settleError(
             "Browser command timed out. Its outcome must be checked before retrying.",
           ),
-        15000,
+        25000,
       );
       signal.addEventListener("abort", onAbort, { once: true });
       this.pending.set(command.commandId, {
@@ -208,6 +257,12 @@ export class BrowserBroker {
         reject,
         timer,
         cleanup: () => signal.removeEventListener("abort", onAbort),
+      });
+      // Deliver current task ownership before the command; UI state broadcasts are debounced.
+      browser.send({
+        type: "browser.watch",
+        workspace: this.store.get<Workspace>("workspace", workspace.id),
+        tabs: browser.tabs,
       });
       browser.send(command);
       this.onChange();
@@ -226,7 +281,8 @@ export class BrowserBroker {
       if (
         c.tabId !== pending.command.tabId ||
         c.frameId !== pending.command.frameId ||
-        supportedApp(c.url, this.sandboxOrigin, this.localOrigin) !== c.app
+        supportedApp(c.url, this.sandboxOrigin, this.localOrigin) !== c.app ||
+        (pending.command.scope && !withinScope(c.url, pending.command.scope))
       )
         return;
       this.observations.set(
@@ -243,6 +299,16 @@ export class BrowserBroker {
       result,
       finishedAt: new Date().toISOString(),
     });
+    this.onActivity(
+      pending.command.workspaceId,
+      pending.command.taskId,
+      "Browser action finished",
+      {
+        commandId: result.commandId,
+        status: result.status === "ok" ? "done" : "error",
+        error: result.status === "error" ? result.message : undefined,
+      },
+    );
     pending.resolve(result);
   }
   disconnect(bridgeId: string) {
@@ -251,6 +317,16 @@ export class BrowserBroker {
       if (p.bridgeId !== bridgeId) continue;
       clearTimeout(p.timer);
       p.cleanup();
+      this.onActivity(
+        p.command.workspaceId,
+        p.command.taskId,
+        "Browser disconnected",
+        {
+          commandId: id,
+          status: "error",
+          error: "Browser disconnected. Actions will not be replayed.",
+        },
+      );
       p.reject(
         new Error("Browser disconnected. Actions will not be replayed."),
       );
@@ -281,8 +357,13 @@ export class BrowserBroker {
         .update(JSON.stringify(observation))
         .digest("hex"),
       observation,
+      ...(result.screenshot ? { screenshot: result.screenshot } : {}),
     };
     this.store.put("evidence", evidence.id, evidence);
+    this.onActivity(task.workspaceId, task.id, "Source captured", {
+      commandId: result.commandId,
+      evidenceId: evidence.id,
+    });
     return evidence;
   }
   evidence(taskId: string) {

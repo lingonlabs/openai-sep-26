@@ -20,7 +20,7 @@
     "journal:build": "tsx scripts/build.ts",
     "journal:start": "tsx src/relay/main.ts",
     "typecheck:ambient": "tsc -p tsconfig.ambient.json --noEmit && pnpm --filter @close/extension typecheck",
-    "test:ambient": "tsx --test packages/shared/tests/*.test.ts apps/server/tests/*.test.ts",
+    "test:ambient": "tsx --test packages/shared/tests/*.test.ts packages/ui/tests/*.test.ts apps/server/tests/*.test.ts",
     "test:ambient-browser": "playwright test -c playwright.ambient.config.ts",
     "check:ambient": "pnpm run typecheck:ambient && pnpm run test:ambient && pnpm run build",
     "demo:record": "playwright test -c playwright.ambient.config.ts demo.spec.ts",

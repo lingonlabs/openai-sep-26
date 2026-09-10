@@ -16,11 +16,15 @@ import {
   type VendorDraft,
   VendorValuesSchema,
   normalize,
+  tabScope,
+  withinScope,
+  AmbientPreferencesSchema,
 } from "@close/shared";
 import { BrowserBroker, type BrowserConnection } from "./broker.js";
 import { CloseAgents } from "./agents.js";
 import { Store } from "./store.js";
 import { VendorSetup } from "./vendors.js";
+import { Ambient } from "./ambient.js";
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const workspacePayload = z.object({ workspaceId: z.string() });
@@ -29,6 +33,55 @@ export class Manager {
   private shuttingDown = false;
   private tasks = new Map<string, AbortController>();
   private coordinators = new Map<string, AbortController>();
+  readonly ambient = new Map<string, Ambient>();
+  private refreshAmbient(browser: BrowserConnection) {
+    let ambient = this.ambient.get(browser.id);
+    if (!ambient) {
+      ambient = new Ambient(
+        this.store,
+        (r) => this.agents.ambient(r),
+        this.agents.options.model,
+        this.agents.options.mode === "demo" || !!this.agents.options.apiKey,
+        () => {
+          if (!this.shuttingDown) this.onChange();
+        },
+        (suggestion) => {
+          this.store.put("suggestion", suggestion.id, suggestion);
+          this.onChange();
+        },
+        () =>
+          this.store
+            .all<Suggestion>("suggestion")
+            .filter((s) => s.status === "pending"),
+      );
+      this.ambient.set(browser.id, ambient);
+    }
+    const w = browser.activeWorkspaceId
+      ? this.store.get<Workspace>("workspace", browser.activeWorkspaceId)
+      : undefined;
+    ambient.update(w, true, !!w?.activeTaskId);
+    for (const s of this.store
+      .all<Suggestion>("suggestion")
+      .filter(
+        (s) => s.options && s.status === "pending" && s.workspaceId === w?.id,
+      )) {
+      if (
+        Date.now() - Date.parse(s.createdAt) >= 600000 ||
+        !w!.tabIds.includes(s.tabId) ||
+        w!.pausedTabIds.includes(s.tabId) ||
+        browser.tabs.find((t) => t.id === s.tabId)?.url !== s.sourceUrl
+      ) {
+        s.status = "stale";
+        this.store.put("suggestion", s.id, s);
+        ambient.record(
+          "expired",
+          `Offer removed after page/scope change or expiry without a response: ${s.title}`,
+          s.workspaceId,
+        );
+      }
+    }
+    return ambient;
+  }
   constructor(
     readonly store: Store,
     readonly broker: BrowserBroker,
@@ -36,7 +89,28 @@ export class Manager {
     private sandboxOrigin: string,
     private localOrigin: string,
   ) {
-    broker.onActivity = (w, t, m) => this.activity(w, t, m);
+    broker.onActivity = (w, t, m, event) =>
+      this.activity(
+        w,
+        t,
+        m,
+        event?.status === "error" ? "error" : "info",
+        event,
+      );
+    agents.onDelta = (task, text) => {
+      if (this.store.get<Task>("task", task.id)?.status !== "running") return;
+      const key = `stream-${task.id}`;
+      const previous = this.store.get<ChatMessage>("message", key);
+      this.store.put("message", key, {
+        id: key,
+        workspaceId: task.workspaceId,
+        role: "assistant",
+        text: (previous?.text ?? "") + text,
+        at: previous?.at ?? now(),
+        taskId: task.id,
+      });
+      this.onChange();
+    };
     broker.onChange = () => this.onChange();
     for (const task of store.all<Task>("task"))
       if (task.status === "running") {
@@ -65,7 +139,12 @@ export class Manager {
     }
   }
   state(): AppState {
+    for (const browser of this.broker.browsers.values())
+      this.refreshAmbient(browser);
     return {
+      ambient: [...this.ambient.values()].flatMap((a) =>
+        a.status ? [a.status] : [],
+      ),
       mode: this.agents.options.mode,
       model: this.agents.options.model,
       apiConfigured: !!this.agents.options.apiKey,
@@ -79,9 +158,15 @@ export class Manager {
       })),
       workspaces: this.store.all("workspace"),
       suggestions: this.store.all<Suggestion>("suggestion").slice(-80),
-      tasks: this.store.all<Task>("task").slice(-80),
+      tasks: this.store
+        .all<Task>("task")
+        .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+        .slice(-80),
       findings: this.store.all<Finding>("finding").slice(-200),
-      activities: this.store.all<Activity>("activity").slice(-150),
+      activities: this.store
+        .all<Activity>("activity")
+        .sort((a, b) => a.at.localeCompare(b.at))
+        .slice(-150),
       messages: this.store.all<ChatMessage>("message").slice(-100),
       vendorDrafts: this.store.all<VendorDraft>("vendorDraft").slice(-100),
     };
@@ -91,14 +176,23 @@ export class Manager {
     taskId: string | null,
     message: string,
     level: Activity["level"] = "info",
+    event?: Partial<Activity>,
   ) {
+    const previous = event?.commandId
+      ? this.store
+          .all<Activity>("activity")
+          .find((a) => a.commandId === event.commandId)
+      : undefined;
     const a: Activity = {
-      id: id(),
+      id: previous?.id ?? id(),
       workspaceId,
       taskId,
-      at: now(),
-      message,
+      at: previous?.at ?? now(),
+      message: previous?.message ?? message,
       level,
+      ...previous,
+      ...event,
+      ...(event?.status === "error" ? { level: "error" as const } : {}),
     };
     this.store.put("activity", a.id, a);
     this.onChange();
@@ -109,9 +203,11 @@ export class Manager {
     return w;
   }
   private watch(browser: BrowserConnection) {
+    this.refreshAmbient(browser);
     const w = browser.activeWorkspaceId
       ? this.store.get<Workspace>("workspace", browser.activeWorkspaceId)
       : undefined;
+    if (w) this.store.put("activeWorkspace", browser.id, w.id);
     browser.send({
       type: "browser.watch",
       workspace: w ?? null,
@@ -126,7 +222,37 @@ export class Manager {
       .all<Workspace>("workspace")
       .filter((w) => w.bridgeId === browser.id)
       .at(-1);
-    if (workspace) browser.activeWorkspaceId = workspace.id;
+    const remembered = this.store.get<string>("activeWorkspace", browser.id);
+    if (workspace)
+      browser.activeWorkspaceId =
+        this.store.get<Workspace>("workspace", remembered ?? "")?.bridgeId ===
+        browser.id
+          ? remembered!
+          : workspace.id;
+    const previousSession = this.store.get<string>(
+      "browserSession",
+      browser.id,
+    );
+    if (browser.sessionId) {
+      if (previousSession && previousSession !== browser.sessionId) {
+        for (const w of this.store
+          .all<Workspace>("workspace")
+          .filter((w) => w.bridgeId === browser.id)) {
+          w.tabIds = [];
+          w.pausedTabIds = [];
+          w.tabScopes = {};
+          w.contexts = {};
+          w.paused = true;
+          this.store.put("workspace", w.id, w);
+          this.activity(
+            w.id,
+            null,
+            "Chrome restarted. Edit workspace to reselect its tabs.",
+          );
+        }
+      }
+      this.store.put("browserSession", browser.id, browser.sessionId);
+    }
     this.watch(browser);
     this.onChange();
   }
@@ -142,7 +268,19 @@ export class Manager {
       const w = this.workspace(b.activeWorkspaceId);
       // Chrome marks a supported tab disconnected while its next page loads.
       // Only a missing/unsupported tab leaves the workspace.
-      const lost = w.tabIds.filter((t) => !b.tabs.some((x) => x.id === t));
+      w.tabScopes ??= {};
+      for (const tab of b.tabs)
+        if (w.tabIds.includes(tab.id) && !w.tabScopes[tab.id]) {
+          const scope = tabScope(tab.url);
+          if (scope) w.tabScopes[tab.id] = scope;
+        }
+      this.store.put("workspace", w.id, w);
+      const lost = w.tabIds.filter(
+        (t) =>
+          !b.tabs.some(
+            (x) => x.id === t && withinScope(x.url, w.tabScopes![t] ?? ""),
+          ),
+      );
       if (lost.length && w.activeTaskId)
         this.stop(
           w.id,
@@ -150,6 +288,10 @@ export class Manager {
         );
       const current = this.workspace(w.id);
       for (const tabId of lost) delete current.contexts[tabId];
+      current.tabIds = current.tabIds.filter((t) => !lost.includes(t));
+      current.pausedTabIds = current.pausedTabIds.filter((t) =>
+        current.tabIds.includes(t),
+      );
       this.store.put("workspace", current.id, current);
     }
     this.watch(b);
@@ -162,6 +304,7 @@ export class Manager {
       this.stop(w.id, "Browser disconnected. No actions will be replayed.");
     }
     this.broker.disconnect(bridgeId);
+    this.ambient.get(bridgeId)?.update(undefined, false, false);
     this.onChange();
   }
   context(bridgeId: string, workspaceId: string, context: PageContext) {
@@ -178,7 +321,11 @@ export class Manager {
       return;
     if (
       supportedApp(context.url, this.sandboxOrigin, this.localOrigin) !==
-      context.app
+        context.app ||
+      !withinScope(
+        context.url,
+        w.tabScopes?.[context.tabId] ?? tabScope(context.url) ?? "",
+      )
     )
       return;
     w.contexts[context.tabId] = context;
@@ -194,10 +341,25 @@ export class Manager {
       if (s.contextKey !== contextKey(context)) {
         s.status = "stale";
         this.store.put("suggestion", s.id, s);
+        this.ambient
+          .get(bridgeId)
+          ?.record(
+            "expired",
+            `Offer removed after page change without a response: ${s.title}`,
+            w.id,
+          );
       }
     }
+    const ambient = this.refreshAmbient(b!);
+    if (!w.activeTaskId && context.source !== "agent") ambient.observe(context);
     this.onChange();
     if (
+      this.agents.options.mode !== "demo" ||
+      context.baseline ||
+      !ambient.status?.preferences.enabled ||
+      !ambient.status.preferences.instructions.some(
+        (i) => i.enabled && i.id === "invoices",
+      ) ||
       context.source === "agent" ||
       context.workflow !== "bill_form" ||
       w.activeTaskId ||
@@ -312,6 +474,7 @@ export class Manager {
     candidate?: Finding,
     message?: string,
     run?: (task: Task, signal: AbortSignal) => Promise<string>,
+    parent?: Task,
   ) {
     if (workspace.paused) throw new Error("Resume the workspace first.");
     if (workspace.activeTaskId)
@@ -327,8 +490,10 @@ export class Manager {
       throw new Error("Configure OPENAI_API_KEY locally and restart the app.");
     const tabs = this.broker.tabs(workspace);
     if (
-      !tabs.some((t) => t.app === "netsuite") ||
-      !tabs.some((t) => t.app === "gmail")
+      !tabs.length ||
+      (kind === "investigate" &&
+        (!tabs.some((t) => t.app === "netsuite") ||
+          !tabs.some((t) => t.app === "gmail")))
     )
       throw new Error("Select connected NetSuite and Gmail tabs.");
     const task: Task = {
@@ -340,14 +505,19 @@ export class Manager {
       startedAt: now(),
       finishedAt: null,
       summary: "",
-      parentTaskId: candidate?.taskId ?? null,
+      parentTaskId: parent?.id ?? candidate?.taskId ?? null,
       actionCount: 0,
       error: null,
       candidateId: candidate?.id ?? null,
     };
     this.store.put("task", task.id, task);
+    if (parent?.status === "completed") {
+      const history = this.store.get<unknown[]>("session", `task:${parent.id}`);
+      if (history) this.store.put("session", `task:${task.id}`, history);
+    }
     workspace.activeTaskId = task.id;
     this.store.put("workspace", workspace.id, workspace);
+    this.refreshAmbient(b);
     const controller = new AbortController();
     this.tasks.set(task.id, controller);
     this.activity(workspace.id, task.id, title);
@@ -439,7 +609,7 @@ export class Manager {
       current.summary = `${current.summary}\n${kind}: ${summary}`.slice(-5000);
       this.store.put("workspace", current.id, current);
       const chat: ChatMessage = {
-        id: id(),
+        id: `stream-${task.id}`,
         workspaceId: workspace.id,
         role: "assistant",
         text: summary,
@@ -454,7 +624,9 @@ export class Manager {
           ? "Bill prepared. Review it in NetSuite; it has not been saved."
           : kind.startsWith("vendor_")
             ? summary
-            : "Investigation complete — findings and sources are ready.",
+            : kind === "chat"
+              ? "Workspace answer ready."
+              : "Investigation complete — findings and sources are ready.",
         "success",
       );
     })()
@@ -478,11 +650,44 @@ export class Manager {
           current.activeTaskId = null;
           this.store.put("workspace", current.id, current);
         }
+        const finished = this.store.get<Task>("task", task.id)!;
+        this.ambient
+          .get(workspace.bridgeId)
+          ?.record(
+            "task",
+            `${finished.status}: ${finished.error || finished.summary}`,
+            workspace.id,
+          );
+        const browser = this.broker.browsers.get(workspace.bridgeId);
+        if (browser) this.watch(browser);
         this.onChange();
       });
     return task;
   }
   async request(action: string, raw: unknown) {
+    if (action === "ambient.settings" || action === "ambient.forget") {
+      const { workspaceId } = workspacePayload.parse(raw),
+        w = this.workspace(workspaceId);
+      const b = this.broker.browsers.get(w.bridgeId);
+      if (!b || b.activeWorkspaceId !== w.id)
+        throw new Error("Select this workspace first.");
+      const ambient = this.refreshAmbient(b);
+      if (action === "ambient.settings")
+        ambient.settings(
+          z.object({ preferences: AmbientPreferencesSchema }).parse(raw)
+            .preferences,
+        );
+      else ambient.forget();
+      for (const s of this.store
+        .all<Suggestion>("suggestion")
+        .filter((s) => s.workspaceId === w.id && s.status === "pending")) {
+        s.status = "stale";
+        this.store.put("suggestion", s.id, s);
+      }
+      this.watch(b);
+      this.onChange();
+      return;
+    }
     if (action === "vendor.plan") {
       const p = z
         .object({
@@ -637,12 +842,13 @@ export class Manager {
         throw e;
       }
     }
-    if (action === "workspace.create") {
+    if (action === "workspace.create" || action === "workspace.update") {
       const p = z
         .object({
+          workspaceId: z.string().optional(),
           name: z.string().trim().min(1).max(80),
           bridgeId: z.string(),
-          tabIds: z.array(z.string()).min(2).max(12),
+          tabIds: z.array(z.string()).min(1).max(12),
           searchFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
           searchTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         })
@@ -655,18 +861,24 @@ export class Manager {
         p.tabIds.some((id) => !b.tabs.some((t) => t.id === id && t.connected))
       )
         throw new Error("Choose only connected tabs.");
-      if (
-        !p.tabIds.some(
-          (id) => b.tabs.find((t) => t.id === id)?.app === "netsuite",
-        ) ||
-        !p.tabIds.some((id) => b.tabs.find((t) => t.id === id)?.app === "gmail")
-      )
-        throw new Error("Choose at least one NetSuite and one Gmail tab.");
       if (b.activeWorkspaceId)
         this.stop(b.activeWorkspaceId, "Switched to another workspace.");
+      const previous =
+        action === "workspace.update"
+          ? this.workspace(p.workspaceId ?? "")
+          : undefined;
+      if (previous && previous.bridgeId !== p.bridgeId)
+        throw new Error("A workspace belongs to its original browser.");
       const w: Workspace = {
+        ...previous,
         ...p,
-        id: id(),
+        id: previous?.id ?? id(),
+        tabScopes: Object.fromEntries(
+          p.tabIds.map((id) => [
+            id,
+            tabScope(b.tabs.find((t) => t.id === id)!.url)!,
+          ]),
+        ),
         tabIds: [...new Set(p.tabIds)],
         pausedTabIds: [],
         paused: false,
@@ -674,7 +886,7 @@ export class Manager {
         activeTaskId: null,
         contexts: {},
         dismissed: {},
-        summary: "",
+        summary: previous?.summary ?? "",
       };
       this.store.put("workspace", w.id, w);
       b.activeWorkspaceId = w.id;
@@ -689,11 +901,21 @@ export class Manager {
       return e;
     }
     if (action === "suggestion.accept" || action === "suggestion.dismiss") {
-      const p = z.object({ suggestionId: z.string() }).parse(raw),
+      const p = z
+          .object({
+            suggestionId: z.string(),
+            option: z.number().int().min(0).max(2).optional(),
+            message: z.string().trim().min(1).max(3000).optional(),
+          })
+          .parse(raw),
         s = this.store.get<Suggestion>("suggestion", p.suggestionId);
       if (!s || s.status !== "pending")
         throw new Error("Suggestion is no longer active.");
       const w = this.workspace(s.workspaceId);
+      if (s.options && Date.now() - Date.parse(s.createdAt) > 600000)
+        throw new Error(
+          "This offer expired. Revisit the page for a fresh offer.",
+        );
       if (
         contextKey(
           w.contexts[s.tabId] ??
@@ -707,13 +929,43 @@ export class Manager {
         throw new Error(
           "The page context changed. Use Check invoices to start a fresh investigation.",
         );
-      if (action === "suggestion.dismiss") {
+      const option = p.option === undefined ? undefined : s.options?.[p.option];
+      if (action === "suggestion.accept" && s.options && !option && !p.message)
+        throw new Error("Choose how you would like help.");
+      if (
+        action === "suggestion.dismiss" ||
+        (!p.message && option?.kind === "dismiss")
+      ) {
         s.status = "dismissed";
         w.dismissed[s.contextKey] = Date.now();
         this.store.put("workspace", w.id, w);
         this.store.put("suggestion", s.id, s);
+        this.ambient.get(w.bridgeId)?.dismiss(s, option?.label ?? "Dismissed");
         this.onChange();
         return;
+      }
+      if (s.options) {
+        const message = p.message ?? option!.prompt;
+        const task = this.start(
+          w,
+          "chat",
+          "Answering your workspace question",
+          undefined,
+          message,
+        );
+        const userMessage: ChatMessage = {
+          id: id(),
+          workspaceId: w.id,
+          role: "user",
+          text: message,
+          at: now(),
+          taskId: task.id,
+        };
+        this.store.put("message", userMessage.id, userMessage);
+        s.status = "accepted";
+        this.store.put("suggestion", s.id, s);
+        this.ambient.get(w.bridgeId)?.dismiss(s, `Accepted: ${message}`);
+        return task;
       }
       const task = this.start(
         w,
@@ -751,15 +1003,31 @@ export class Manager {
           .object({
             workspaceId: z.string(),
             message: z.string().trim().min(1).max(4000),
+            parentTaskId: z.string().optional(),
           })
           .parse(raw),
         w = this.workspace(p.workspaceId);
+      const parent = p.parentTaskId
+        ? this.store.get<Task>("task", p.parentTaskId)
+        : this.store
+            .all<Task>("task")
+            .filter(
+              (t) =>
+                t.workspaceId === w.id &&
+                t.kind === "chat" &&
+                t.status === "completed",
+            )
+            .at(-1);
+      if (p.parentTaskId && (!parent || parent.workspaceId !== w.id))
+        throw new Error("Task is outside this workspace.");
       const task = this.start(
         w,
         "chat",
         "Answering your workspace question",
         undefined,
         p.message,
+        undefined,
+        parent,
       );
       const m: ChatMessage = {
         id: id(),
@@ -832,6 +1100,7 @@ export class Manager {
     for (const w of this.store.all<Workspace>("workspace"))
       this.stop(w.id, "Local app shutting down.");
     for (const c of this.coordinators.values()) c.abort();
+    for (const ambient of this.ambient.values()) ambient.cancel();
     this.shuttingDown = true;
   }
 }

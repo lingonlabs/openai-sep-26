@@ -6,8 +6,15 @@ export default defineConfig({
     name: "Close Copilot",
     description:
       "A workspace-aware invoice assistant. Local relay, selected tabs, human final save.",
-    version: "0.3.0",
-    permissions: ["storage", "tabs", "sidePanel", "scripting", "activeTab"],
+    version: "0.4.0",
+    permissions: [
+      "storage",
+      "tabs",
+      "sidePanel",
+      "scripting",
+      "activeTab",
+      "debugger",
+    ],
     host_permissions: [
       "https://11816061-sb1.app.netsuite.com/*",
       "https://mail.google.com/*",
