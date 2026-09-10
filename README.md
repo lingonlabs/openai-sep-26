@@ -1,6 +1,6 @@
 # Close Copilot
 
-A local, workspace-aware invoice assistant for the August close. Select a NetSuite sandbox tab, Gmail inbox, and optional vendor-onboarding sheet. The assistant notices Add New Bill, offers an investigation, compares invoice evidence with recorded bills, and prepares a selected bill for human review. It never clicks Save.
+A local, workspace-aware invoice assistant for the August close. Select a NetSuite sandbox tab, Gmail inbox, and optional vendor-onboarding sheet. The assistant notices Add New Bill, offers an investigation, compares invoice evidence with recorded bills, and prepares a selected bill for human review. Bills stay unsaved. Missing vendors can be checked, prepared, and created after a separate explicit approval in the panel.
 
 The complete flow runs in two surfaces: a Chrome MV3 extension and a local workbench with clearly labelled synthetic applications. Both use the same page runtime, WebSocket protocol, backend, and agent tools. **Live Astra has completed the synthetic workflow. The real NetSuite/Gmail profile still needs a supervised adapter rehearsal.**
 
@@ -39,6 +39,14 @@ NETSUITE_SANDBOX_ORIGIN=https://11816061-sb1.app.netsuite.com
 
 The **Demo guide** button provides the walkthrough inside the application. A live recording and its result JSON are in the local, ignored `recordings/` directory on Julie's machine. See [the rehearsal notes](docs/DEMO.md).
 
+## Vendor setup and creation
+
+Choose **Resolve vendor** on a finding or a vendor-related preparation error, or open **Vendor setup** in the panel. Enter the actual company name and optional email. The assistant checks the visible NetSuite vendor list for existing and similar names before preparing anything. Incomplete list coverage stops the flow with an explanation. A placeholder name is never treated as a real vendor.
+
+After a complete check with no matches, it prepares a new company vendor form and displays the proposed fields. Fill any additional required fields directly in NetSuite and choose **Refresh vendor review**. **Create vendor in NetSuite** is the separate approval that permits one Save of that exact reviewed vendor form. Changing its fields invalidates the approval. **Not now** leaves the form unsaved.
+
+Creation is verified against the resulting saved vendor record. Interrupted saves are resolved with read-only inspection and never automatically repeated; an unresolved outcome stays locked for manual review. Creating a vendor does not mark onboarding approved or save an invoice or bill. The end-to-end flow is tested in both the synthetic workbench and the packaged Chrome extension; actual sandbox vendor creation still needs a rehearsal after reloading extension version **0.3.0**.
+
 ## Load the Chrome extension
 
 1. Use the dedicated demo Chrome profile. Open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**.
@@ -75,7 +83,7 @@ LIVE_DEMO=1 pnpm demo:record
 
 Browser tests run in isolated Chromium profiles, including one that loads the actual packaged extension. They never use a personal Chrome profile. Stop the app on port 4318 before the ordinary browser suite; it starts a deterministic server with an in-memory database. The live recording test explicitly opts into the already-running live server.
 
-Unit and transport tests cover evidence validation, exact matching, workspace boundaries, single-task ownership, cancellation, no replay, and local request authentication. Browser tests cover the full workflow, source viewing, pause/dismiss behavior, blocked Save, stale pages, duplicate actions, unknown vendors, existing user input, currency checks, and human interruption.
+Unit and transport tests cover evidence validation, exact matching, workspace boundaries, single-task ownership, cancellation, no replay, local request authentication, vendor approval, duplicate checks, and uncertain vendor saves. Browser tests cover the full bill and vendor workflows, source viewing, pause/dismiss behavior, blocked bill Save, stale pages, duplicate actions, unknown vendors, existing user input, currency checks, and human interruption.
 
 ## Current limits
 
@@ -83,6 +91,6 @@ Unit and transport tests cover evidence validation, exact matching, workspace bo
 - USD bill preparation requires an observable USD currency field and uniquely identified vendor, invoice number, date, and amount controls. The vendor must already exist. Account/line coding, tax and period remain human review steps. Conflicting existing bill details are never overwritten automatically.
 - Exact matches compare vendor, invoice number, currency and amount. Cited fields must be present in captured text. This is an evidence check, not a guarantee that an entire account or every attachment was searched. Semantic interpretation still requires human review.
 - Stop or disconnect can leave partial edits. Unknown outcomes stop the task instead of retrying. Inspect the form before starting again.
-- Local SQLite is a single-process prototype store, not an encrypted multi-user service. No application OAuth, account connectors, deployment, automatic submission, or scheduled background runs are included.
+- Local SQLite is a single-process prototype store, not an encrypted multi-user service. No application OAuth, account connectors, deployment, unattended submission, or scheduled background runs are included. Vendor saving requires explicit approval of the current review.
 
 The former journal-entry prototype remains under `src/` and the local tag `journal-prototype-v0.1`. Its separate run commands are documented in [JOURNAL_PROTOTYPE.md](docs/JOURNAL_PROTOTYPE.md). Team planning lives in the separate `coordination` worktree; implementation notes are in [PHILIPP_HANDOFF.md](docs/PHILIPP_HANDOFF.md).

@@ -33,6 +33,7 @@ import {
   type Workspace,
 } from "@close/shared";
 import { Button, cn } from "./button";
+import { VendorSetupPanel } from "./vendor-setup";
 export { Button } from "./button";
 export type Request = (action: string, payload?: unknown) => Promise<any>;
 export const AppIcon = ({ app, ...props }: { app: string; size?: number }) =>
@@ -134,6 +135,8 @@ export function CopilotPanel({
   const [details, setDetails] = useState(false);
   const [tabSettings, setTabSettings] = useState(false);
   const [view, setView] = useState<"findings" | "conversation">("findings");
+  const [vendorOpen, setVendorOpen] = useState(false);
+  const [vendorFinding, setVendorFinding] = useState<Finding | null>(null);
   const w = workspaceId
     ? state?.workspaces.find((w) => w.id === workspaceId)
     : state?.workspaces.find((w) =>
@@ -377,9 +380,13 @@ export function CopilotPanel({
                   <strong>
                     {active.kind === "prepare"
                       ? "Preparing your bill"
-                      : active.kind === "chat"
-                        ? "Checking your workspace"
-                        : "Following the evidence"}
+                      : active.kind === "vendor_setup"
+                        ? "Checking vendor setup"
+                        : active.kind === "vendor_create"
+                          ? "Creating your approved vendor"
+                          : active.kind === "chat"
+                            ? "Checking your workspace"
+                            : "Following the evidence"}
                   </strong>
                   <Button
                     variant="ghost"
@@ -398,6 +405,39 @@ export function CopilotPanel({
                   {active.actionCount} browser actions · Only selected tabs
                 </div>
               </section>
+            )}
+            <Button
+              variant="ghost"
+              disabled={!!disabled}
+              onClick={() => {
+                setVendorOpen(!vendorOpen);
+                setVendorFinding(null);
+              }}
+            >
+              Vendor setup
+            </Button>
+            {(vendorOpen ||
+              (state?.vendorDrafts ?? []).some(
+                (d) =>
+                  d.workspaceId === w.id &&
+                  !["dismissed", "failed"].includes(d.status),
+              )) && (
+              <VendorSetupPanel
+                key={`${w.id}/${vendorFinding?.id ?? "manual"}`}
+                workspaceId={w.id}
+                finding={
+                  vendorFinding?.workspaceId === w.id ? vendorFinding : null
+                }
+                drafts={(state?.vendorDrafts ?? []).filter(
+                  (d) => d.workspaceId === w.id,
+                )}
+                request={request}
+                disabled={!!disabled || !!active}
+                onEvidence={async (id) => {
+                  const source = await act("evidence.get", { id });
+                  if (source) setEvidence(source);
+                }}
+              />
             )}
             {!pending && !active && findings.length === 0 && (
               <section className="empty-state">
@@ -513,6 +553,10 @@ export function CopilotPanel({
                           onPrepare={() =>
                             void act("finding.prepare", { findingId: f.id })
                           }
+                          onVendor={() => {
+                            setVendorFinding(f);
+                            setVendorOpen(true);
+                          }}
                           onEvidence={async (id) => {
                             const e = await act("evidence.get", { id });
                             if (e) setEvidence(e);
@@ -572,6 +616,28 @@ export function CopilotPanel({
                 <div>
                   <strong>Task needs attention</strong>
                   <p>{last.error}</p>
+                  {last.kind === "prepare" &&
+                    /vendor|UNKNOWN_OPTION/i.test(last.error ?? "") && (
+                      <>
+                        <p>
+                          Would you like me to check the vendor and prepare a
+                          new record for your approval if needed?
+                        </p>
+                        <Button
+                          disabled={!!disabled || !!active}
+                          variant="secondary"
+                          onClick={() => {
+                            setVendorFinding(
+                              findings.find((f) => f.id === last.candidateId) ??
+                                null,
+                            );
+                            setVendorOpen(true);
+                          }}
+                        >
+                          Resolve vendor
+                        </Button>
+                      </>
+                    )}
                 </div>
               </div>
             )}
@@ -712,12 +778,14 @@ function FindingCard({
   onPrepare,
   onEvidence,
   onFocus,
+  onVendor,
 }: {
   finding: Finding;
   disabled: boolean;
   onPrepare: () => void;
   onEvidence: (id: string) => void;
   onFocus: () => void;
+  onVendor: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const status = f.preparedAt
@@ -797,6 +865,18 @@ function FindingCard({
           <ArrowRight size={14} />
         </Button>
       )}
+      {f.status !== "recorded" &&
+        !f.preparedAt &&
+        f.onboarding !== "approved" && (
+          <Button
+            className="prepare-button"
+            variant="secondary"
+            disabled={disabled}
+            onClick={onVendor}
+          >
+            Resolve vendor
+          </Button>
+        )}
       {f.preparedAt && (
         <Button
           variant="secondary"

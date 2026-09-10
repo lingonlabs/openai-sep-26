@@ -13,10 +13,14 @@ import {
   type Suggestion,
   type Task,
   type Workspace,
+  type VendorDraft,
+  VendorValuesSchema,
+  normalize,
 } from "@close/shared";
 import { BrowserBroker, type BrowserConnection } from "./broker.js";
 import { CloseAgents } from "./agents.js";
 import { Store } from "./store.js";
+import { VendorSetup } from "./vendors.js";
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const workspacePayload = z.object({ workspaceId: z.string() });
@@ -51,6 +55,14 @@ export class Manager {
         suggestion.status = "stale";
         store.put("suggestion", suggestion.id, suggestion);
       }
+    for (const draft of store.all<VendorDraft>("vendorDraft")) {
+      if (draft.status === "creating" || draft.status === "checking") {
+        draft.status = draft.status === "creating" ? "unknown" : "failed";
+        draft.message =
+          "The app restarted. Inspect NetSuite before any further creation attempt; nothing is replayed.";
+        store.put("vendorDraft", draft.id, draft);
+      }
+    }
   }
   state(): AppState {
     return {
@@ -71,6 +83,7 @@ export class Manager {
       findings: this.store.all<Finding>("finding").slice(-200),
       activities: this.store.all<Activity>("activity").slice(-150),
       messages: this.store.all<ChatMessage>("message").slice(-100),
+      vendorDrafts: this.store.all<VendorDraft>("vendorDraft").slice(-100),
     };
   }
   activity(
@@ -274,6 +287,18 @@ export class Manager {
           taskId: task.id,
         });
         this.activity(w.id, task.id, reason);
+        for (const draft of this.store
+          .all<VendorDraft>("vendorDraft")
+          .filter(
+            (d) =>
+              d.workspaceId === w.id &&
+              ["checking", "creating"].includes(d.status),
+          )) {
+          draft.status = draft.status === "creating" ? "unknown" : "failed";
+          draft.message =
+            reason + " Check NetSuite before another creation attempt.";
+          this.store.put("vendorDraft", draft.id, draft);
+        }
       }
     }
     w.activeTaskId = null;
@@ -286,6 +311,7 @@ export class Manager {
     title: string,
     candidate?: Finding,
     message?: string,
+    run?: (task: Task, signal: AbortSignal) => Promise<string>,
   ) {
     if (workspace.paused) throw new Error("Resume the workspace first.");
     if (workspace.activeTaskId)
@@ -333,7 +359,10 @@ export class Manager {
     );
     void (async () => {
       let summary = "";
-      if (kind === "investigate") {
+      if (run) {
+        summary = await run(task, controller.signal);
+        controller.signal.throwIfAborted();
+      } else if (kind === "investigate") {
         const extraction = await this.agents.investigate(
           task,
           workspace,
@@ -423,7 +452,9 @@ export class Manager {
         task.id,
         kind === "prepare"
           ? "Bill prepared. Review it in NetSuite; it has not been saved."
-          : "Investigation complete — findings and sources are ready.",
+          : kind.startsWith("vendor_")
+            ? summary
+            : "Investigation complete — findings and sources are ready.",
         "success",
       );
     })()
@@ -452,6 +483,160 @@ export class Manager {
     return task;
   }
   async request(action: string, raw: unknown) {
+    if (action === "vendor.plan") {
+      const p = z
+        .object({
+          workspaceId: z.string(),
+          findingId: z.string().nullable().optional(),
+          values: VendorValuesSchema,
+        })
+        .parse(raw);
+      const w = this.workspace(p.workspaceId);
+      if (
+        p.findingId &&
+        this.store.get<Finding>("finding", p.findingId)?.workspaceId !== w.id
+      )
+        throw new Error("Finding is outside this workspace.");
+      if (
+        this.store
+          .all<VendorDraft>("vendorDraft")
+          .some(
+            (d) =>
+              normalize(d.values.name) === normalize(p.values.name) &&
+              ["creating", "created", "unknown"].includes(d.status),
+          )
+      )
+        throw new Error(
+          "This vendor has a completed or uncertain creation attempt. Inspect the existing record before creating another.",
+        );
+      if (w.activeTaskId)
+        throw new Error("Wait for the current task or stop it first.");
+      const draft: VendorDraft = {
+        id: id(),
+        workspaceId: w.id,
+        findingId: p.findingId ?? null,
+        values: p.values,
+        status: "checking",
+        tabId: null,
+        checkEvidenceId: null,
+        preparedEvidenceId: null,
+        review: null,
+        message: "Checking existing vendors",
+        createdAt: now(),
+        reviewedAt: null,
+        commitTaskId: null,
+        recordUrl: null,
+      };
+      this.store.put("vendorDraft", draft.id, draft);
+      try {
+        return this.start(
+          w,
+          "vendor_setup",
+          `Checking vendor ${draft.values.name}`,
+          undefined,
+          undefined,
+          (task, signal) =>
+            new VendorSetup(this.store, this.broker, this.agents).plan(
+              draft,
+              task,
+              w,
+              signal,
+            ),
+        );
+      } catch (e) {
+        draft.status = "failed";
+        draft.message = this.error(e);
+        this.store.put("vendorDraft", draft.id, draft);
+        throw e;
+      }
+    }
+    if (
+      ["vendor.confirm", "vendor.refresh", "vendor.dismiss"].includes(action)
+    ) {
+      const p = z
+        .object({
+          draftId: z.string(),
+          approved: z.boolean().optional(),
+          reviewedAt: z.string().optional(),
+        })
+        .parse(raw);
+      const draft = this.store.get<VendorDraft>("vendorDraft", p.draftId);
+      if (!draft) throw new Error("Vendor review not found.");
+      const w = this.workspace(draft.workspaceId);
+      if (w.activeTaskId)
+        throw new Error("Wait for the current task or stop it first.");
+      if (
+        ["creating", "created", "unknown", "dismissed", "checking"].includes(
+          draft.status,
+        )
+      )
+        throw new Error("This vendor request cannot be repeated.");
+      if (action === "vendor.dismiss") {
+        draft.status = "dismissed";
+        draft.message = "Vendor creation declined. The form remains unsaved.";
+        this.store.put("vendorDraft", draft.id, draft);
+        this.onChange();
+        return;
+      }
+      if (action === "vendor.confirm") {
+        if (
+          p.approved !== true ||
+          draft.status !== "ready" ||
+          !draft.review ||
+          draft.review.missing.length ||
+          p.reviewedAt !== draft.reviewedAt
+        )
+          throw new Error(
+            "Review and explicitly approve the current vendor details first.",
+          );
+        const check =
+          draft.checkEvidenceId &&
+          this.store.get<Evidence>("evidence", draft.checkEvidenceId);
+        if (
+          !check ||
+          Date.now() - Date.parse(check.capturedAt) > 10 * 60 * 1000
+        )
+          throw new Error(
+            "The duplicate check has expired. Start a new vendor check.",
+          );
+        if (
+          this.store
+            .all<VendorDraft>("vendorDraft")
+            .some(
+              (d) =>
+                d.id !== draft.id &&
+                normalize(d.values.name) === normalize(draft.values.name) &&
+                ["creating", "created", "unknown"].includes(d.status),
+            )
+        )
+          throw new Error(
+            "Another request already attempted this vendor. Inspect NetSuite first.",
+          );
+      }
+      const previous = draft.status;
+      draft.status = action === "vendor.confirm" ? "creating" : "checking";
+      this.store.put("vendorDraft", draft.id, draft);
+      const service = new VendorSetup(this.store, this.broker, this.agents);
+      try {
+        return this.start(
+          w,
+          action === "vendor.confirm" ? "vendor_create" : "vendor_setup",
+          action === "vendor.confirm"
+            ? `Creating approved vendor ${draft.values.name}`
+            : "Refreshing vendor review",
+          undefined,
+          undefined,
+          (task, signal) =>
+            action === "vendor.confirm"
+              ? service.commit(draft, task, signal)
+              : service.refresh(draft, task, signal),
+        );
+      } catch (e) {
+        draft.status = previous;
+        this.store.put("vendorDraft", draft.id, draft);
+        throw e;
+      }
+    }
     if (action === "workspace.create") {
       const p = z
         .object({

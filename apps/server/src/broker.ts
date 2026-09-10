@@ -9,6 +9,7 @@ import type {
   Observation,
   Task,
   Workspace,
+  VendorDraft,
 } from "@close/shared";
 import { supportedApp } from "@close/shared";
 import { Store } from "./store.js";
@@ -83,6 +84,44 @@ export class BrowserBroker {
       throw new Error("The workspace browser is disconnected");
     if (!supportedApp(tab.url, this.sandboxOrigin, this.localOrigin))
       throw new Error("Tab has navigated outside the permitted applications");
+    if (
+      ["check_vendor", "prepare_vendor"].includes(action.kind) &&
+      (task.kind !== "vendor_setup" || tab.app !== "netsuite")
+    )
+      throw new Error("This task cannot prepare a vendor.");
+    if (action.kind === "create_vendor") {
+      const draft = this.store.get<VendorDraft>("vendorDraft", action.draftId);
+      if (
+        task.kind !== "vendor_create" ||
+        tab.app !== "netsuite" ||
+        !draft ||
+        draft.workspaceId !== workspace.id ||
+        draft.tabId !== tabId ||
+        draft.status !== "creating" ||
+        draft.commitTaskId !== task.id ||
+        JSON.stringify(draft.values) !== JSON.stringify(action.values) ||
+        JSON.stringify(draft.review) !== JSON.stringify(action.review)
+      )
+        throw new Error(
+          "Vendor creation requires the exact, explicitly approved draft.",
+        );
+      if (
+        this.store
+          .all<any>("command")
+          .some(
+            (c) =>
+              c.action?.kind === "create_vendor" &&
+              c.action.draftId === draft.id &&
+              !(
+                c.result?.status === "error" &&
+                c.result?.outcome === "not_executed"
+              ),
+          )
+      )
+        throw new Error(
+          "Vendor creation was already attempted. Inspect the result; it will not be repeated.",
+        );
+    }
     if (
       action.kind === "prepare_bill" &&
       (task.kind !== "prepare" || tab.app !== "netsuite")

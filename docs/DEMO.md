@@ -44,6 +44,10 @@ The test email also contains the literal vendor placeholder `[Exact existing Net
 
 ## Remaining real-account rehearsal
 
+Extension **0.3.0** adds **Vendor setup** and **Resolve vendor**. The synthetic end-to-end tests now cover checking existing names, preparing a new vendor, explicit approval, one Save, and saved-record verification in both the workbench and packaged extension. Real sandbox vendor creation still needs a rehearsal; no real vendor was created during implementation. Use the actual company name, and review the proposed vendor before choosing **Create vendor in NetSuite**. Bill saving and vendor onboarding approval remain separate.
+
+Current validation: 22 unit/transport tests and 17 browser tests pass, including vendor approval, stale reviews, required fields, duplicate detection, interrupted saves, and the existing bill flow. The optional live-Astra recording test was not rerun for this feature.
+
 Julie: reload Close Copilot in Chrome's extensions page, refresh the selected Gmail and NetSuite tabs, and supply the exact sandbox vendor name for the test invoice. The existing Chrome pairing works; no new key or sign-in is needed. Native Chrome screen control failed in this task, so the extension reload needs to be done in Chrome.
 
 Philipp: confirm the intended Gmail sample invoices, the optional onboarding-sheet tab, and the expense account/tax/period expected for the demo candidate. No new infrastructure or API key is needed; Julie's local key has already passed the live run.

@@ -8,6 +8,8 @@ import {
   type AppKind,
   normalize,
 } from "@close/shared";
+import { checkVendorList, vendorReview, verifyVendorIdentity } from "./vendor";
+export { savedVendorUrl } from "./vendor";
 
 const dangerous =
   /\b(save|submit|post|delete|remove|trash|archive|send|compose|pay|purchase|approve|reject|void|sign out|log out)\b/i;
@@ -164,6 +166,13 @@ export class PageRuntime {
         ["password", "file", "submit", "reset"].includes(inputType ?? "") ||
         ((tag === "button" || tag === "a" || role === "button") &&
           dangerous.test(label)),
+      required:
+        !!(el as HTMLInputElement).required ||
+        el.getAttribute("aria-required") === "true" ||
+        /\*\s*$/.test(this.rawLabel(el)),
+      checked: ["checkbox", "radio"].includes(inputType ?? "")
+        ? (el as HTMLInputElement).checked
+        : null,
     };
   }
   inspect(source: PageContext["source"] = "user"): Observation {
@@ -185,23 +194,33 @@ export class PageRuntime {
         .find((e) => /^(vendor|vendor name)\s*\*?$/i.test(e.label))
         ?.value?.trim() || null;
     const fixture = this.doc.body?.dataset.workflow;
+    const pageUrl = new URL(url);
+    const vendorPage =
+      this.app === "netsuite" && /\/vendor\.nl$/i.test(pageUrl.pathname);
     const billForm =
       this.app === "netsuite" &&
       /bill/i.test(title + " " + text.slice(0, 1500)) &&
       elements.some((e) => /^(vendor|vendor name)/i.test(e.label)) &&
       elements.some((e) => /reference|invoice (number|#)/i.test(e.label));
     const workflow = (fixture ||
-      (billForm
-        ? "bill_form"
-        : this.app === "gmail"
-          ? elements.some((e) => this.isSearchLabel(e.label))
-            ? "inbox"
-            : "message"
-          : this.app === "sheets"
-            ? "vendors"
-            : /bills/i.test(title + " " + text.slice(0, 1500))
-              ? "bill_list"
-              : "other")) as PageContext["workflow"];
+      (vendorPage
+        ? pageUrl.searchParams.has("id") &&
+          pageUrl.searchParams.get("e") !== "T"
+          ? "vendor_record"
+          : "vendor_form"
+        : this.app === "netsuite" && /^vendors\b/i.test(title.trim())
+          ? "vendor_list"
+          : billForm
+            ? "bill_form"
+            : this.app === "gmail"
+              ? elements.some((e) => this.isSearchLabel(e.label))
+                ? "inbox"
+                : "message"
+              : this.app === "sheets"
+                ? "vendors"
+                : /bills/i.test(title + " " + text.slice(0, 1500))
+                  ? "bill_list"
+                  : "other")) as PageContext["workflow"];
     const limitations: string[] = [];
     if (bodyText.length > 40000)
       limitations.push(
@@ -351,11 +370,121 @@ export class PageRuntime {
       const action = command.action;
       if (action.kind === "inspect")
         return { ...base, status: "ok", observation: before };
+      if (action.kind === "check_vendor") {
+        if (command.phase !== "vendor_setup" || this.app !== "netsuite")
+          throw new Error(
+            "ACTION_BLOCKED: Vendor checks require a vendor setup task.",
+          );
+        return {
+          ...base,
+          status: "ok",
+          observation: before,
+          vendorCheck: checkVendorList(this.doc, before, action.name),
+        };
+      }
       this.agentWorking = true;
       if (action.kind === "screenshot")
         throw new Error(
           "SCREENSHOT_UNAVAILABLE: Use the Chrome extension capture command.",
         );
+      if (action.kind === "prepare_vendor") {
+        if (
+          command.phase !== "vendor_setup" ||
+          this.app !== "netsuite" ||
+          before.context.workflow !== "vendor_form" ||
+          new URL(before.context.url).searchParams.has("id")
+        )
+          throw new Error(
+            "ACTION_BLOCKED: Open a new, unsaved company vendor form.",
+          );
+        const edits: { element: HTMLElement; value: string; label: string }[] =
+          [];
+        for (const [pattern, value] of [
+          [/^(company name|vendor name)$/i, action.values.name],
+          [/^e-?mail$/i, action.values.email],
+        ] as const) {
+          if (!value) continue;
+          const matches = before.elements.filter(
+            (e) =>
+              pattern.test(e.label) &&
+              e.value !== null &&
+              !e.disabled &&
+              !e.readOnly &&
+              e.role !== "combobox",
+          );
+          if (matches.length !== 1)
+            throw new Error(
+              "UNSUPPORTED_VENDOR_FORM: Could not identify a unique company name or email field.",
+            );
+          const field = matches[0];
+          if (
+            field.value?.trim() &&
+            normalize(field.value) !== normalize(value)
+          )
+            throw new Error(
+              "FORM_NOT_EMPTY: Existing vendor details would be overwritten.",
+            );
+          if (field.value !== value)
+            edits.push({
+              element: this.target(field.id, before).element,
+              value,
+              label: field.label,
+            });
+        }
+        for (const edit of edits) {
+          checkActive();
+          started = true;
+          this.write(edit.element, edit.value);
+          await new Promise((r) => setTimeout(r, 90));
+        }
+        checkActive();
+        const after = this.inspect("agent");
+        verifyVendorIdentity(after, action.values);
+        return {
+          ...base,
+          status: "ok",
+          observation: after,
+          vendorReview: vendorReview(after),
+          changes: edits.map((e) => ({
+            field: e.label,
+            from: "",
+            to: e.value,
+          })),
+        };
+      }
+      if (action.kind === "create_vendor") {
+        if (command.phase !== "vendor_create")
+          throw new Error(
+            "ACTION_BLOCKED: Creating a vendor requires explicit panel approval.",
+          );
+        verifyVendorIdentity(before, action.values);
+        const review = vendorReview(before);
+        if (JSON.stringify(review) !== JSON.stringify(action.review))
+          throw new Error(
+            "REVIEW_CHANGED: Vendor details changed. Refresh and approve the new review.",
+          );
+        if (review.missing.length)
+          throw new Error(
+            "REQUIRED_FIELDS: Complete " + review.missing.join(", "),
+          );
+        const save = before.elements.find(
+          (e) =>
+            /^save$/i.test(e.label) &&
+            !e.disabled &&
+            (e.tag === "button" ||
+              e.inputType === "submit" ||
+              e.role === "button"),
+        );
+        const button = save && this.elements.get(save.id);
+        if (!button || !button.isConnected || !this.visible(button))
+          throw new Error("SAVE_UNAVAILABLE: No verified vendor Save control.");
+        checkActive();
+        started = true;
+        button.click();
+        await new Promise((r) => setTimeout(r, 200));
+        checkActive();
+        return { ...base, status: "ok", observation: this.inspect("agent") };
+      }
       if (action.kind === "prepare_bill") {
         if (
           command.phase !== "prepare" ||
@@ -520,7 +649,11 @@ export class PageRuntime {
       } else {
         const { described, element } = this.target(action.elementId, before);
         if (action.kind === "fill" || action.kind === "select") {
-          if (command.phase !== "investigate" && command.phase !== "chat")
+          if (
+            command.phase !== "investigate" &&
+            command.phase !== "chat" &&
+            command.phase !== "vendor_setup"
+          )
             throw new Error(
               "ACTION_BLOCKED: Use the reviewed bill-preparation command.",
             );

@@ -107,6 +107,40 @@ test("extension stays in its own Chrome profile when a synthetic workspace is ac
       "data-saved",
       "true",
     );
+    await panel
+      .getByRole("button", { name: "Vendor setup", exact: true })
+      .click();
+    await panel.getByLabel("Vendor company name").fill("Extension Vendor Test");
+    await panel
+      .getByRole("button", { name: "Check vendor and prepare review" })
+      .click();
+    await expect(
+      panel.getByRole("button", {
+        name: "Create vendor in NetSuite",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await expect(
+      netsuite.getByLabel("Company Name", { exact: true }),
+    ).toHaveValue("Extension Vendor Test");
+    await expect(netsuite.locator("body")).not.toHaveAttribute(
+      "data-vendor-save-count",
+      "1",
+    );
+    await panel
+      .getByRole("button", { name: "Create vendor in NetSuite", exact: true })
+      .click();
+    await expect(
+      panel.getByText(/was created and its saved record was verified/).first(),
+    ).toBeVisible();
+    await expect(netsuite.locator("body")).toHaveAttribute(
+      "data-vendor-save-count",
+      "1",
+    );
+    await expect(netsuite.locator("body")).not.toHaveAttribute(
+      "data-saved",
+      "true",
+    );
     await panel.getByRole("button", { name: "Pause", exact: true }).click();
     await expect(
       netsuite.getByRole("button", { name: /Open Close Copilot/ }),

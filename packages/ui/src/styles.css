@@ -844,3 +844,14 @@ a {
     font-size: 12px;
   }
 }
+
+.vendor-setup form {display:grid;gap:12px;margin:16px 0}
+.vendor-setup label {display:grid;gap:6px;font-size:12px;font-weight:600}
+.vendor-setup input {width:100%;box-sizing:border-box;border:1px solid #cad6cd;border-radius:7px;background:white;padding:10px;font:inherit;color:#263e35}
+.vendor-review {border-top:1px solid #d8e1d6;padding-top:16px;margin-top:16px}
+.vendor-review dl {display:grid;gap:8px;margin:14px 0;font-size:12px}
+.vendor-review dl>div {display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.vendor-review dt {color:#6d7f72}
+.vendor-review dd {margin:0;overflow-wrap:anywhere}
+.vendor-review .button-row {flex-wrap:wrap;margin:12px 0}
+.vendor-review details {font-size:12px;margin:12px 0}

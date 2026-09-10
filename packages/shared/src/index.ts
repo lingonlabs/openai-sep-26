@@ -28,6 +28,9 @@ export const ContextSchema = z.object({
     "inbox",
     "message",
     "vendors",
+    "vendor_list",
+    "vendor_form",
+    "vendor_record",
     "other",
   ]),
   vendor: z.string().max(300).nullable(),
@@ -47,6 +50,8 @@ export const ElementSchema = z.object({
   disabled: z.boolean(),
   readOnly: z.boolean(),
   blocked: z.boolean(),
+  required: z.boolean().optional(),
+  checked: z.boolean().nullable().optional(),
 });
 export type PageElement = z.infer<typeof ElementSchema>;
 export const ObservationSchema = z.object({
@@ -67,6 +72,66 @@ export const BillValuesSchema = z.object({
   memo: z.string().max(1000),
 });
 export type BillValues = z.infer<typeof BillValuesSchema>;
+export const VendorValuesSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(300)
+    .refine(
+      (value) => !isPlaceholderVendor(value),
+      "Enter the actual vendor name, not a placeholder.",
+    ),
+  email: z.union([z.string().email().max(254), z.literal("")]).default(""),
+});
+export type VendorValues = z.infer<typeof VendorValuesSchema>;
+export const VendorFieldSchema = z.object({
+  id: Id,
+  label: z.string(),
+  value: z.string(),
+  displayValue: z.string().optional(),
+  required: z.boolean(),
+  checked: z.boolean().nullable(),
+});
+export const VendorReviewSchema = z.object({
+  documentId: Id,
+  url: z.string().url(),
+  fields: z.array(VendorFieldSchema),
+  missing: z.array(z.string()),
+});
+export type VendorReview = z.infer<typeof VendorReviewSchema>;
+export const VendorCheckSchema = z.object({
+  name: z.string(),
+  complete: z.boolean(),
+  matches: z.array(z.object({ name: z.string(), url: z.string().nullable() })),
+  reason: z.string(),
+});
+export type VendorCheck = z.infer<typeof VendorCheckSchema>;
+export interface VendorDraft {
+  id: string;
+  workspaceId: string;
+  findingId: string | null;
+  values: VendorValues;
+  status:
+    | "checking"
+    | "existing"
+    | "needs_input"
+    | "ready"
+    | "creating"
+    | "created"
+    | "failed"
+    | "unknown"
+    | "dismissed";
+  tabId: string | null;
+  checkEvidenceId: string | null;
+  preparedEvidenceId: string | null;
+  review: VendorReview | null;
+  message: string;
+  createdAt: string;
+  reviewedAt: string | null;
+  commitTaskId: string | null;
+  recordUrl: string | null;
+}
 export const ActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("inspect") }),
   z.object({ kind: z.literal("click"), elementId: Id }),
@@ -88,6 +153,14 @@ export const ActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("scroll"), direction: z.enum(["up", "down"]) }),
   z.object({ kind: z.literal("screenshot") }),
   z.object({ kind: z.literal("prepare_bill"), values: BillValuesSchema }),
+  z.object({ kind: z.literal("check_vendor"), name: z.string().min(1) }),
+  z.object({ kind: z.literal("prepare_vendor"), values: VendorValuesSchema }),
+  z.object({
+    kind: z.literal("create_vendor"),
+    draftId: Id,
+    values: VendorValuesSchema,
+    review: VendorReviewSchema,
+  }),
 ]);
 export type BrowserAction = z.infer<typeof ActionSchema>;
 export const CommandSchema = z.object({
@@ -97,7 +170,13 @@ export const CommandSchema = z.object({
   taskId: Id,
   tabId: Id,
   frameId: z.number().int().nonnegative(),
-  phase: z.enum(["investigate", "prepare", "chat"]),
+  phase: z.enum([
+    "investigate",
+    "prepare",
+    "chat",
+    "vendor_setup",
+    "vendor_create",
+  ]),
   expectedDocumentId: Id.nullable(),
   expectedPageVersion: z.number().int().nonnegative().nullable(),
   action: ActionSchema,
@@ -112,6 +191,8 @@ export const CommandResultSchema = z.discriminatedUnion("status", [
     status: z.literal("ok"),
     observation: ObservationSchema,
     screenshot: z.string().max(2_000_000).optional(),
+    vendorCheck: VendorCheckSchema.optional(),
+    vendorReview: VendorReviewSchema.optional(),
     changes: z
       .array(z.object({ field: z.string(), from: z.string(), to: z.string() }))
       .optional(),
@@ -191,7 +272,7 @@ export type TaskStatus =
 export interface Task {
   id: string;
   workspaceId: string;
-  kind: "investigate" | "prepare" | "chat";
+  kind: "investigate" | "prepare" | "chat" | "vendor_setup" | "vendor_create";
   status: TaskStatus;
   title: string;
   startedAt: string;
@@ -262,6 +343,7 @@ export interface AppState {
   findings: Finding[];
   activities: Activity[];
   messages: ChatMessage[];
+  vendorDrafts: VendorDraft[];
 }
 export type ServerMessage =
   | { type: "welcome"; clientId: string; state: AppState }
@@ -282,6 +364,14 @@ export type ServerMessage =
 
 export function normalize(value: string) {
   return value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+export function isPlaceholderVendor(value: string) {
+  return (
+    !value.trim() ||
+    /^\s*(?:\[.*\]|<.*>|tbd|unknown|vendor name|insert vendor.*|replace.*vendor.*)\s*$/i.test(
+      value,
+    )
+  );
 }
 export function toCents(value: string): bigint {
   AmountSchema.parse(value);
@@ -439,10 +529,7 @@ export function assessInvoices(
         (other.currency !== invoice.currency ||
           other.amount !== invoice.amount),
     );
-    const placeholderVendor =
-      /^\s*(?:\[.*\]|<.*>|tbd|unknown|vendor name|insert vendor.*|replace.*vendor.*)\s*$/i.test(
-        invoice.vendor,
-      );
+    const placeholderVendor = isPlaceholderVendor(invoice.vendor);
     const status = placeholderVendor
       ? "needs_review"
       : contradictory

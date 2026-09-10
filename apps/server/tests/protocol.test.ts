@@ -256,3 +256,126 @@ test("the broker waits for a loading page and sends the next inspection only onc
     store.close();
   }
 });
+
+test("vendor creation rejects missing, stale, or fabricated approval and duplicate checks", async () => {
+  const { manager, w, store, broker, commands } = await harness();
+  try {
+    await assert.rejects(
+      manager.request("vendor.plan", {
+        workspaceId: w.id,
+        values: { name: "[Exact existing NetSuite vendor name]", email: "" },
+      }),
+      /actual vendor name/,
+    );
+    const { VendorSetup } = await import("../src/vendors.js");
+    const draft: import("@close/shared").VendorDraft = {
+      id: "draft",
+      workspaceId: w.id,
+      findingId: null,
+      values: { name: "New Vendor", email: "" },
+      status: "ready",
+      tabId: "ns",
+      checkEvidenceId: "proof",
+      preparedEvidenceId: "prepared",
+      review: {
+        documentId: "doc",
+        url: "http://127.0.0.1:4318/demo/netsuite#vendor-new",
+        fields: [],
+        missing: [],
+      },
+      message: "Ready",
+      createdAt: new Date().toISOString(),
+      reviewedAt: new Date().toISOString(),
+      commitTaskId: null,
+      recordUrl: null,
+    };
+    store.put("vendorDraft", draft.id, draft);
+    await assert.rejects(
+      manager.request("vendor.confirm", { draftId: draft.id }),
+      /explicitly approve/,
+    );
+    await assert.rejects(
+      manager.request("vendor.confirm", {
+        draftId: draft.id,
+        approved: true,
+        reviewedAt: "old",
+      }),
+      /current vendor details/,
+    );
+    await assert.rejects(
+      manager.request("vendor.confirm", {
+        draftId: draft.id,
+        approved: true,
+        reviewedAt: draft.reviewedAt,
+      }),
+      /expired/,
+    );
+    const service = new VendorSetup(
+      store,
+      broker,
+      new CloseAgents(store, broker, options),
+    );
+    assert.throws(() => service.verifyCheck(draft), /fresh vendor check/);
+    store.put("evidence", "proof", {
+      workspaceId: w.id,
+      taskId: "check-task",
+      capturedAt: new Date().toISOString(),
+    });
+    store.put("command", "check-command", {
+      taskId: "check-task",
+      tabId: "ns",
+      action: { kind: "check_vendor", name: "New Vendor" },
+      status: "ok",
+      result: {
+        vendorCheck: { complete: true, matches: [{ name: "New Vendor" }] },
+      },
+    });
+    assert.throws(() => service.verifyCheck(draft), /fresh vendor check/);
+    assert.equal(
+      commands.filter((c) => c.action.kind === "create_vendor").length,
+      0,
+    );
+  } finally {
+    manager.close();
+    store.close();
+  }
+});
+
+test("an uncertain vendor save locks repeat creation, including after restart", async () => {
+  const { manager, w, store, broker } = await harness();
+  try {
+    store.put("vendorDraft", "uncertain", {
+      id: "uncertain",
+      workspaceId: w.id,
+      values: { name: "Uncertain Vendor", email: "" },
+      status: "creating",
+      message: "",
+    });
+    const reopened = new Manager(
+      store,
+      broker,
+      new CloseAgents(store, broker, options),
+      options.sandboxOrigin,
+      "http://127.0.0.1:4318",
+    );
+    assert.equal(store.get<any>("vendorDraft", "uncertain").status, "unknown");
+    await assert.rejects(
+      reopened.request("vendor.confirm", {
+        draftId: "uncertain",
+        approved: true,
+      }),
+      /cannot be repeated/,
+    );
+    await assert.rejects(
+      reopened.request("vendor.plan", {
+        workspaceId: w.id,
+        values: { name: "Uncertain Vendor", email: "" },
+      }),
+      /uncertain creation/,
+    );
+    reopened.close();
+  } finally {
+    manager.close();
+    store.close();
+  }
+});
