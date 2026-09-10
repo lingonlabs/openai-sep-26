@@ -89,7 +89,7 @@ passed that check. Preserve this rule during all later dependency changes.
 
 | Prototype | Branch / PR | Status | Next step / blocker |
 | --- | --- | --- | --- |
-| Ambient local | `prototype/ambient-local`, `e7745b1` | Added actionable handoffs, queued updates, explicit activity state, and progress-aware recovery; 40 tests pass | Reload and use Continue task on prior invoice conversation; improve Sheet capture |
+| Ambient local | `prototype/ambient-local`, `ce86272` | Sheet cells read successfully via real screenshot; added periodic visual watcher; 42 tests pass | Reload and verify baseline/new vendor offer; continue invoice task; teammate styling branches from `e7745b1` |
 | Teammate prototype | — | Awaiting teammate update | Record branch and comparison-ready milestone |
 
 ## Handoff log
@@ -166,3 +166,13 @@ Append concise entries: date, owner, commit/PR, changes, verification, next step
   Backend restarted while idle and extension reconnected. Reload the extension,
   then use Continue task on the existing conversation for real workflow validation.
   No dependencies changed and no real account actions were performed for testing.
+- 2026-09-10 — `ce86272`: real read-only Sheet test used one inspect and one
+  screenshot through the paired extension. Astra read four headers and three
+  populated vendor rows from pixels; DOM text exposed no grid contents. Added
+  roughly 20-second Sheet screenshot polling independent of DOM mutations,
+  before/after multimodal ambient input, image deduplication, and persisted visual
+  baselines. Scope/epoch checks and the shared browser queue prevent overlapping
+  execution; post-task images are baselined. All 42 tests, types, and build pass.
+  Backend restarted; awaiting extension reload and live new-row test. No styles
+  or dependencies changed. Teammate is preparing styling on another branch from
+  `e7745b1`; retain those changes when integrating the capture work.
