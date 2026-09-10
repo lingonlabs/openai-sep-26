@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Suggestion, TaskPresence } from '@ambient/shared';
+import { lingonLogo } from '../brand';
 import { Presence, presenceStyles } from './Presence';
 
 // Exercises the actual shadow-root popup with synthetic data and no browser bridge.
@@ -11,7 +12,7 @@ export function PresencePreview({ initial }: { initial: Suggestion }) {
   const [task, setTask] = useState<TaskPresence | null>(null);
   useEffect(() => { setShadow(host.current!.shadowRoot ?? host.current!.attachShadow({ mode: 'open' })); }, []);
   useEffect(() => { const interval = setInterval(() => setTick(value => value + 1), 2000); return () => clearInterval(interval); }, []);
-  return <main style={{ padding: 32, maxWidth: 650 }}><h1>Floating assistant preview</h1>
+  return <main className="presence-preview"><div className="preview-logo"><img src={lingonLogo} alt=""/>Lingon Labs</div><h1>A little help.<br/>Right where you work.</h1><a className="preview-return" href="/preview">← Back to the side panel</a>
     <p>Synthetic page. Choices exercise the popup without touching accounts. Background updates arrive every two seconds.</p>
     <p role="status">Preview updates: {tick}. {last}</p>
     <label><input type="checkbox" checked={failPanel} onChange={event => setFailPanel(event.target.checked)}/> Simulate a Chrome panel error</label>

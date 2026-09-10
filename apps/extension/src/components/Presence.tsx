@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { taskStateLabel, type Suggestion, type TaskPresence } from '@ambient/shared';
+import { lingonLogo, lingonFont } from '../brand';
 import { ActionCard } from './ActionCard';
 import { TaskHandoff } from './TaskHandoff';
 
@@ -12,6 +13,12 @@ export type PresenceProps = {
 };
 
 export function Presence({ paused, working, monitoring, suggestion, task, progress, error, send, onPosition }: PresenceProps) {
+  useEffect(() => {
+    const font = new FontFace('Lingon Inter', `url(${lingonFont})`, { weight: '100 900' });
+    document.fonts.add(font);
+    void font.load().catch(() => {});
+    return () => { document.fonts.delete(font); };
+  }, []);
   const [expanded, setExpanded] = useState(false), [busy, setBusy] = useState(false), [localError, setError] = useState('');
   const [handledId, setHandledId] = useState<string | null>(null);
   const dragging = useRef<{ start: number; top: number; moved: boolean } | null>(null);
@@ -46,8 +53,9 @@ export function Presence({ paused, working, monitoring, suggestion, task, progre
       onPointerUp={event => {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
         if (dragging.current?.moved) void send({ type: 'presence:position', top: event.currentTarget.getBoundingClientRect().top + 'px' });
-      }}>✦<span className="dot"/><span className="orb-state">{stateLabel}</span></button>
+      }}><img src={lingonLogo} alt=""/><span className="dot"/><span className="orb-state">{stateLabel}</span></button>
     {(offer || expanded || working || pausedTask?.handoff || localError || error) && <section className="bubble" aria-label="Ambient assistant" onKeyDown={event => event.stopPropagation()} onKeyUp={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
+<div className="popup-brand"><img src={lingonLogo} alt=""/><span>Lingon Labs<small>Close companion</small></span></div>
       <div className={'task-state ' + (working ? 'active' : 'idle')} role="status"><strong>{stateLabel}</strong><span>{working ? 'Agent active' : 'Agent not running'}</span></div>
       {offer ? <ActionCard key={offer.id} suggestion={offer} disabled={busy}
         onChoose={(option, text) => { void dispatch({ type: 'ui:accept', id: offer.id, option, text }, offer.id); }}
@@ -55,7 +63,7 @@ export function Presence({ paused, working, monitoring, suggestion, task, progre
         : pausedTask ? <TaskHandoff key={pausedTask.id} task={pausedTask} disabled={busy || paused}
           onResume={async () => { if (!await dispatch({ type: 'ui:resume', taskId: pausedTask.id })) throw new Error('The task could not be resumed. See the error below.'); }}
           onReply={async text => { if (!await dispatch({ type: 'ui:reply', taskId: pausedTask.id, prompt: text })) throw new Error('The update could not be sent. See the error below.'); }}/>
-        : <><div className="eyebrow">Ambient · {working ? 'working' : paused || !monitoring ? 'paused' : 'close companion'}</div>
+        : <><div className="eyebrow">Lingon Labs · {working ? 'working' : paused || !monitoring ? 'paused' : 'close companion'}</div>
           <h2 className="title">{working ? 'Checking your workspace' : paused || !monitoring ? 'Monitoring is paused' : 'Here when you need a hand'}</h2>
           <p className="detail" role="status">{working ? progress || 'Starting the investigation…' : 'Only the tabs you selected belong to this workspace.'}</p>
         </>}
@@ -80,13 +88,19 @@ export function Presence({ paused, working, monitoring, suggestion, task, progre
 }
 
 export const presenceStyles = `
-:host{all:initial;position:fixed;right:0;top:58%;z-index:2147483647;font:13px/1.45 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#20302c}
-*{box-sizing:border-box}button,input,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:default;opacity:.55}button:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #edc65e;outline-offset:2px}
-.orb{border:1px solid #ffffff65;border-right:0;background:#1c4739;color:white;border-radius:15px 0 0 15px;width:43px;height:49px;box-shadow:0 4px 20px #12352725;font-size:22px;position:relative;touch-action:none}.orb.paused{background:#6d7773}.dot{position:absolute;right:7px;top:7px;width:6px;height:6px;background:#d7eeba;border-radius:50%}
-.bubble{position:fixed;right:54px;top:clamp(12px,var(--ambient-top,58vh),max(12px,calc(100dvh - 590px)));width:min(340px,calc(100vw - 70px));max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain;background:#fffdf8;border:1px solid #dce3d8;border-radius:15px;padding:18px;box-shadow:0 12px 44px #112b3024}
-.eyebrow,.suggestion-label{font-size:10px;letter-spacing:.12em;color:#5c7468;text-transform:uppercase;margin-bottom:9px}.title,.action-card h2{font-size:16px;line-height:1.35;font-weight:650;margin:0 0 8px}.detail,.action-card p{font-size:12px;color:#65736b;margin:0 0 14px;overflow-wrap:anywhere}
-.button-primary,.stop{background:#244e3e;color:white;border:0;border-radius:7px;padding:9px 14px}.stop{background:#9b4137}.plain,.suggestion-actions>button:not(.button-primary){background:transparent;border:0;color:#52655b;padding:8px}
-.action-card fieldset{border:0;margin:12px 0;padding:0;min-width:0}.action-card legend{font-weight:600;font-size:12px;padding:0;margin-bottom:8px}.action-option{display:flex;align-items:flex-start;gap:9px;border:1px solid #dce3d8;border-radius:8px;padding:9px;margin:6px 0;cursor:pointer;font-size:12px}.action-option:has(input:checked){background:#eaf0e5;border-color:#789a75}.action-option input{margin:2px 0 0;accent-color:#244e3e;flex-shrink:0}.action-option span{overflow-wrap:anywhere}.action-card textarea{display:block;resize:vertical;width:100%;min-height:65px;max-height:160px;border:1px solid #dce3d8;border-radius:8px;padding:10px;background:white;color:#20302c;font-size:12px}
-.suggestion-actions{display:flex;align-items:center;gap:8px;margin:12px 0 4px}.why-suggestion{font-size:11px;color:#65736b}.why-suggestion summary{cursor:pointer}.why-suggestion p{margin-top:8px}.menu{display:flex;flex-wrap:wrap;gap:5px;border-top:1px solid #e4e7df;margin-top:12px;padding-top:10px}.popup-error{color:#9b4137;background:#f9eee7;border-radius:7px;padding:10px;font-size:12px;overflow-wrap:anywhere}
-.orb-state{position:absolute;right:49px;top:12px;white-space:nowrap;background:#f5f4ed;color:#294b3a;border:1px solid #d8e0d2;border-radius:12px;padding:3px 8px;font-size:10px}.orb.working{background:#255b73}.orb.working .dot{animation:ambient-pulse 1.4s infinite}.orb.waiting{background:#8e6931}.task-state{display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #dde3d6;padding-bottom:10px;margin-bottom:14px;font-size:12px}.task-state span,.monitor-note{color:#6d7c70;font-size:10px}.task-state.active strong{color:#255b73}.task-handoff>strong{font-size:15px}.task-handoff p{font-size:12px;overflow-wrap:anywhere}.handoff-idle,.handoff-reason{color:#776c52}.task-handoff label{display:block;font-size:11px;margin-top:12px}.task-handoff textarea,.task-update textarea{display:block;width:100%;min-height:64px;resize:vertical;border:1px solid #d6dece;border-radius:7px;padding:9px;margin-top:5px;background:white;color:#20302c}.task-update{margin-top:12px}.queued-reply{font-size:11px;color:#385d75;background:#eaf2f5;padding:8px;border-radius:7px}@keyframes ambient-pulse{50%{opacity:.25}}@media(prefers-reduced-motion:reduce){.orb.working .dot{animation:none}}
+:host{all:initial;position:fixed;right:0;top:58%;z-index:2147483647;font:13px/1.5 "Lingon Inter",Inter,Arial,sans-serif;color:#1f3445;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}button,input,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.5}button:focus-visible,input:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #269b96;outline-offset:3px}
+.orb{display:grid;place-items:center;border:1px solid #ffffff30;border-right:0;background:#0f172a;border-radius:15px 0 0 15px;width:46px;height:53px;box-shadow:0 4px 24px #0f172a30;position:relative;touch-action:none}.orb img{width:28px;height:28px}.orb.paused{background:#64748b}.dot{position:absolute;right:6px;top:6px;width:5px;height:5px;background:#2cdfcc;border-radius:50%;box-shadow:0 0 0 2px #0f172a}
+.bubble{position:fixed;right:58px;--lingon-popup-top:clamp(12px,var(--ambient-top,58vh),max(12px,calc(100dvh - 640px)));top:var(--lingon-popup-top);width:min(350px,calc(100vw - 74px));max-height:calc(100dvh - var(--lingon-popup-top) - 12px);overflow:auto;overscroll-behavior:contain;background:white;border:1px solid #d4e3e5;border-radius:15px;padding:20px;box-shadow:0 16px 56px #0f172a35}
+.popup-brand{display:flex;align-items:center;gap:9px;margin:-20px -20px 18px;padding:17px 20px;background:linear-gradient(211deg,#1f3445 1.23%,#3bdecc 239.98%);color:white}.popup-brand img{width:28px;height:28px}.popup-brand span{font:700 17px/1.2 Arial,sans-serif;letter-spacing:-.3px}.popup-brand small{display:block;font:9px/1.5 "Lingon Inter",Inter,Arial,sans-serif;letter-spacing:.09em;color:#b3d9da;margin-top:3px}
+.eyebrow,.suggestion-label{font-size:9px;letter-spacing:.13em;color:#269b96;text-transform:uppercase;margin-bottom:10px;font-weight:600}.title,.action-card h2{font-size:20px;line-height:1.3;letter-spacing:-.5px;font-weight:500;margin:0 0 10px}.detail,.action-card p{font-size:12px;line-height:1.7;color:#64808a;margin:0 0 14px;overflow-wrap:anywhere}
+.button-primary,.stop{background:#2cdfcc;color:#1f3445;border:1px solid #2cdfcc;border-radius:8px;padding:10px 16px;font-size:12px;font-weight:500}.button-primary:hover:not(:disabled){background:#67dfd1}.stop{background:#fff1f2;color:#be123c;border-color:#fecdd3}.plain,.suggestion-actions>button:not(.button-primary){background:transparent;border:0;color:#64808a;padding:9px;font-size:11px}
+.action-card fieldset{border:0;margin:15px 0;padding:0;min-width:0}.action-card legend{font-weight:500;font-size:11px;padding:0;margin-bottom:9px}.action-option{display:flex;align-items:flex-start;gap:9px;border:1px solid #d4e3e5;border-radius:8px;padding:10px;margin:8px 0;cursor:pointer;font-size:11px;background:#f8fafc}.action-option:has(input:checked){background:#e0f2f1;border-color:#269b96}.action-option input{margin:2px 0 0;accent-color:#269b96;flex-shrink:0}.action-option span{overflow-wrap:anywhere}.action-card textarea{display:block;resize:vertical;width:100%;min-height:65px;max-height:160px;border:1px solid #cbdde1;border-radius:8px;padding:11px;background:white;color:#1f3445;font-size:12px;line-height:1.6}.action-card textarea::placeholder{color:#8ca4ab}
+.suggestion-actions{display:flex;align-items:center;gap:8px;margin:14px 0 6px}.why-suggestion{font-size:10px;color:#64808a}.why-suggestion summary{cursor:pointer}.why-suggestion p{margin-top:9px}.menu{display:flex;flex-wrap:wrap;gap:5px;border-top:1px solid #e2e8f0;margin-top:12px;padding-top:10px}.popup-error{color:#be123c;background:#fff1f2;border:1px solid #fecdd3;border-radius:8px;padding:11px;font-size:12px;overflow-wrap:anywhere}
+
+/* Task confirmation and continuation, from Philipp's latest implementation. */
+.orb-state{position:absolute;right:52px;top:14px;white-space:nowrap;background:#f0faf8;color:#1f3445;border:1px solid #b2dfdb;border-radius:20px;padding:4px 9px;font-size:10px;line-height:1.4}.orb[aria-expanded="true"] .orb-state{display:none}.orb.working{background:#1f3445}.orb.working .dot{animation:ambient-pulse 1.4s infinite}.orb.waiting{background:#93691e}.orb.waiting .dot{background:#f8d77a}
+.task-state{display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #e2e8f0;padding-bottom:12px;margin-bottom:16px;font-size:11px}.task-state strong{font-weight:600}.task-state span,.monitor-note{color:#718a96;font-size:10px}.task-state.active strong{color:#269b96}.monitor-note{line-height:1.65;margin:14px 0 0}
+.task-handoff>strong{font-size:17px;font-weight:500;letter-spacing:-.3px}.task-handoff p{font-size:12px;line-height:1.7;overflow-wrap:anywhere}.handoff-idle,.handoff-reason{color:#8b712f}.task-handoff .handoff-idle{padding:8px 10px;background:#fff8e6;border-radius:7px;font-size:11px}.task-handoff label{display:block;font-size:11px;color:#64808a;margin-top:15px}.task-handoff textarea,.task-update textarea{display:block;width:100%;min-height:70px;max-height:150px;resize:vertical;border:1px solid #cbdde1;border-radius:8px;padding:11px;margin-top:7px;background:white;color:#1f3445;font-size:12px;line-height:1.6}.task-handoff textarea::placeholder,.task-update textarea::placeholder{color:#8ca4ab}.task-update{margin-top:14px}.task-handoff .plain{padding-left:0}.queued-reply{font-size:11px;line-height:1.65;color:#287b76;background:#e0f2f1;padding:10px;border-radius:8px}
+@keyframes ambient-pulse{50%{opacity:.25}}@media(prefers-reduced-motion:reduce){.orb.working .dot{animation:none}}
 `;
