@@ -4,7 +4,7 @@ import { AmbientDecisionSchema, type AmbientDriver, type AmbientEvent } from './
 import type { Store } from './store.js';
 
 type PageMemory = { url: string; title: string; count: number; lastSeen: number; visitId: string; text: string; hash: string };
-type Memory = { summary: string; pages: Record<string, PageMemory>; recent: AmbientStatus['recent']; offered: Record<string, number>; lastChecked: number | null; reason: string };
+type Memory = { summary: string; pages: Record<string, PageMemory>; recent: AmbientStatus['recent']; offered: Record<string, number>; responded?: Record<string, number>; lastChecked: number | null; reason: string };
 const emptyMemory = (): Memory => ({ summary: '', pages: {}, recent: [], offered: {}, lastChecked: null, reason: 'Waiting for a page observation.' });
 export class Ambient {
   private workspace?: Workspace; private connected = false; private taskActive = false;
@@ -15,7 +15,8 @@ export class Ambient {
   private baselineTabs = new Set<number>(); private error?: string;
   private reviewTabs = new Set<number>();
   constructor(private store: Store, private driver: AmbientDriver, private model: string, private apiReady: boolean,
-    private changed: () => void, private offer: (suggestion: Suggestion) => void) {}
+    private changed: () => void, private offer: (suggestion: Suggestion) => void,
+    private getSuggestions: () => Suggestion[] = () => []) {}
   get status(): AmbientStatus | undefined {
     if (!this.workspace) return;
     return { workspaceId: this.workspace.id, preferences: this.prefs, epoch: this.epoch,
@@ -61,7 +62,8 @@ export class Ambient {
     this.memory.recent = this.memory.recent.slice(-60); this.persist();
   }
   dismiss(suggestion: Suggestion, response = 'Dismissed') {
-    this.memory.offered[suggestion.key] = Date.now(); this.record('response', `${response}: ${suggestion.title}`);
+    this.memory.responded ??= {};
+    this.memory.responded[suggestion.key] = Date.now(); this.record('response', `${response}: ${suggestion.title}`);
   }
   observe(context: PageContext) {
     if (!this.enabled || typeof context.text !== 'string' || (context.ambientEpoch !== undefined && context.ambientEpoch !== this.epoch)) return;
@@ -82,11 +84,17 @@ export class Ambient {
     this.memory.pages[pageKey] = { url: context.url, title: context.title, count, lastSeen: Date.now(), visitId, text, hash };
     this.memory.pages = Object.fromEntries(Object.entries(this.memory.pages).sort((a,b) => b[1].lastSeen-a[1].lastSeen).slice(0,100));
     this.memory.offered = Object.fromEntries(Object.entries(this.memory.offered).filter(([,at]) => Date.now()-at < 86400000).slice(-100));
+    this.memory.responded = Object.fromEntries(Object.entries(this.memory.responded ?? {}).filter(([,at]) => Date.now()-at < 86400000).slice(-100));
     this.latest.set(context.tabId, event);
     if (baseline) { this.pending.delete(context.tabId); this.memory.reason = 'Refreshed the baseline after execution; agent changes were not evaluated.'; this.persist(); this.changed(); return; }
     const requestedReview = this.reviewTabs.delete(context.tabId);
     if (!newVisit && previous?.hash === hash && !requestedReview) return;
     if (newVisit) this.record('visit', `Observed visit ${count}: ${context.title}`);
+    const queued = this.pending.get(context.tabId);
+    if (queued?.url === event.url && queued.visitId === event.visitId) {
+      event.newVisit ||= queued.newVisit;
+      event.previousText = queued.previousText;
+    }
     this.pending.set(context.tabId, event); this.persist(); this.schedule(); this.changed();
   }
   private schedule() {
@@ -104,7 +112,9 @@ export class Ambient {
     const timeout = setTimeout(() => controller.abort(new Error('Ambient evaluation timed out.')), 60000);
     try {
       const decision = AmbientDecisionSchema.parse(await this.driver({ workspace: this.workspace, preferences: this.prefs, model: this.model,
-        signal: controller.signal, summary: this.memory.summary, recent: this.memory.recent.slice(-15), events }));
+        signal: controller.signal, summary: this.memory.summary, recent: this.memory.recent.slice(-15), events,
+        pendingSuggestions: this.getSuggestions().filter(s => s.workspaceId === this.workspace!.id && Date.now()-s.createdAt < 600000)
+          .map(({ id, tabId, title, sourceUrl, visitId }) => ({ id, tabId, title, sourceUrl, visitId })) }));
       if (controller.signal.aborted || this.epoch !== epoch || !this.enabled) return;
       this.memory.summary = decision.summary; this.memory.reason = decision.reason; this.memory.lastChecked = Date.now();
       this.record('evaluation', decision.reason || 'No useful intervention identified.');
@@ -113,7 +123,10 @@ export class Ambient {
         const instruction = this.prefs.instructions.find(i => i.id === decision.instructionId && i.enabled);
         if (!event || !latest || event.url !== latest.url || event.visitId !== latest.visitId || event.hash !== latest.hash || !instruction || decision.options.length < 2 || !decision.entityKey || !decision.title) return;
         const key = `${this.workspace.id}:${instruction.id}:${decision.entityKey.toLowerCase().trim()}`;
-        if (Date.now() - (this.memory.offered[key] ?? 0) < 15 * 60000) return;
+        if (this.getSuggestions().some(s => s.key === key && Date.now()-s.createdAt < 600000)) return;
+        if (Date.now() - (this.memory.responded?.[key] ?? 0) < 15 * 60000) {
+          this.memory.reason = 'Kept quiet because you recently accepted or declined this help.'; return;
+        }
         this.memory.offered[key] = Date.now();
         this.record('suggestion', decision.title);
         this.offer({ id: randomUUID(), workspaceId: this.workspace.id, tabId: event.tabId, version: event.visitId,

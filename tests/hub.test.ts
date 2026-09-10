@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Hub } from '../apps/server/src/hub.js';
 import { Store } from '../apps/server/src/store.js';
-import type { AmbientDriver } from '../apps/server/src/ambient-agent.js';
+import type { AmbientDriver, AmbientRequest } from '../apps/server/src/ambient-agent.js';
 import type { AgentDriver } from '../apps/server/src/agent.js';
 import type { BrowserAction, ClientMessage, ServerMessage } from '../packages/shared/src/index.js';
 const workspace = { id: 'close', name: 'September', paused: false, tabs: [
@@ -13,8 +13,8 @@ const tabs = [{ id: 1, title: 'NetSuite', url: 'https://demo.app.netsuite.com/ap
 const context = { tabId: 1, url: tabs[0].url, title: 'Vendor Bill', version: 'v1', kind: 'bill_form' as const, vendor: '', text: 'New Bill', visitId: 'doc-1', observedAt: Date.now() };
 const mockAmbient: AmbientDriver = async r => ({ decision: 'offer', summary: 'A bill was observed.', reason: 'A selected bill matches the invoice instruction.', instructionId: 'invoices', tabId: r.events[0].tabId, entityKey: r.events[0].text, title: 'Check this bill?', detail: 'Compare invoice evidence.', options: [{ kind: 'task', label: 'Check invoices', prompt: 'Check invoices.' }, { kind: 'task', label: 'Review this bill', prompt: 'Inspect the bill.' }] });
 const action = (tabId: number): BrowserAction => ({ tabId, action: 'inspect', ref: null, version: null, text: null, url: null });
-async function setup(driver: AgentDriver, apiReady = true) {
-  const store = new Store(':memory:'); const hub = new Hub(store, driver, 'gpt-6-astra', apiReady, mockAmbient); hub.connected = true;
+async function setup(driver: AgentDriver, apiReady = true, ambientDriver: AmbientDriver = mockAmbient) {
+  const store = new Store(':memory:'); const hub = new Hub(store, driver, 'gpt-6-astra', apiReady, ambientDriver); hub.connected = true;
   await hub.receive({ type: 'sync', activeWorkspaceId: 'close', workspaces: [structuredClone(workspace)], tabs }); return { hub, store };
 }
 test('ambient suggestion is deduplicated, dismissed, persisted, and invalidated on page changes', async () => {
@@ -100,4 +100,33 @@ test('browser failure details survive completion and persistence', async () => {
   await hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Check.' });
   assert.equal(store.tasks()[0].activity[0].error, 'Target changed since inspection.');
   assert.equal(store.tasks()[0].activity[0].status, 'error'); hub.ambient.cancel(); store.close();
+});
+
+test('returning to a bill replaces an expired offer; current pending offers and explicit declines suppress repeats', async () => {
+  const requests: AmbientRequest[] = [];
+  const { hub, store } = await setup(async () => ({ text: 'unused', history: [] }), true, async r => {
+    requests.push(r);
+    return { ...await mockAmbient(r), entityKey: 'same-bill', summary: 'The previous bill offer is pending.' };
+  });
+  hub.observe(context); await hub.ambient.evaluate();
+  const firstId = hub.suggestions[0].id;
+  hub.observe({ ...context, text: 'New Bill toolbar updated' }); await hub.ambient.evaluate();
+  assert.equal(requests.at(-1)?.pendingSuggestions[0].id, firstId);
+  assert.equal(hub.suggestions[0].id, firstId);
+  const homeTabs = [{ ...tabs[0], url: 'https://demo.app.netsuite.com/app/center/card.nl' }, tabs[1]];
+  await hub.receive({ type: 'sync', activeWorkspaceId: 'close', workspaces: [workspace], tabs: homeTabs });
+  assert.equal(hub.suggestions.length, 0);
+  assert.ok(hub.ambient.status?.recent.some(e => e.kind === 'expired'));
+  await hub.receive({ type: 'sync', activeWorkspaceId: 'close', workspaces: [workspace], tabs });
+  hub.observe({ ...context, visitId: 'doc-return' });
+  hub.observe({ ...context, visitId: 'doc-return', text: 'New Bill toolbar settled' });
+  await hub.ambient.evaluate();
+  assert.deepEqual(requests.at(-1)?.pendingSuggestions, []);
+  assert.equal(requests.at(-1)?.events[0].newVisit, true);
+  assert.equal(hub.suggestions.length, 1);
+  assert.notEqual(hub.suggestions[0].id, firstId);
+  await hub.receive({ type: 'dismiss', id: hub.suggestions[0].id });
+  hub.observe({ ...context, visitId: 'doc-return-again' }); await hub.ambient.evaluate();
+  assert.equal(hub.suggestions.length, 0);
+  hub.ambient.cancel(); store.close();
 });

@@ -30,7 +30,10 @@ The backend coalesces changed observations and starts at most one ambient
 evaluation per 15 seconds. Up to four changed tabs are evaluated in a batch;
 remaining tabs stay queued. Each tab has at most one pending observation. The
 model receives before/current text, observed visit count, enabled instructions,
-the last summary, and recent activity. It has no browser tools.
+the last summary, recent activity, and the authoritative list of currently
+available offers. Navigation/expiry removes an offer without implying a decline;
+an old summary cannot establish that it is still pending. Coalesced updates retain
+the new-visit signal and the earliest comparison baseline. It has no browser tools.
 
 Monitoring does not request screenshots or attach Chrome's debugger. It cannot
 guarantee observation of canvas-only content, offscreen/unloaded Sheet rows,
@@ -61,7 +64,10 @@ SQLite keys are scoped by workspace. Memory contains:
 - A model-maintained summary, at most 5,000 characters.
 - The 100 most recently observed page URLs, each with bounded text and visit count.
 - Up to 60 recent visit, evaluation, offer, response, settings, and task events.
-- Up to 100 recent opportunity identifiers, with a 15-minute repeat cooldown.
+- Up to 100 recent opportunity identifiers and response timestamps. Explicit
+  acceptance/dismissal imposes a 15-minute repeat cooldown; an unhandled offer
+  removed by navigation can be offered again on return. Currently available
+  offers are also deduplicated.
 
 Page text is limited to 16,000 characters in the extension and 12,000 in stored
 observations. Old page text is not supplied as a comparison baseline after a day.

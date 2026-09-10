@@ -18,7 +18,7 @@ export class Hub {
   connected = false;
   constructor(readonly store: Store, readonly driver: AgentDriver, readonly model: string, readonly apiReady: boolean, ambientDriver: AmbientDriver = driveAmbient) {
     this.tasks = store.tasks().map(task => task.status === 'running' ? { ...task, status: 'stopped', error: 'Backend restarted. Review the browser before continuing.' } : task);
-    this.ambient = new Ambient(store, ambientDriver, model, apiReady, () => this.publish(), suggestion => { this.suggestions = [suggestion]; this.publish(); });
+    this.ambient = new Ambient(store, ambientDriver, model, apiReady, () => this.publish(), suggestion => { this.suggestions = [suggestion]; this.publish(); }, () => this.suggestions);
   }
   state(): ServerState { return { apiReady: this.apiReady, model: this.model, tasks: this.tasks, suggestions: this.suggestions, runningTaskId: this.running?.task.id ?? null, ambient: this.ambient.status }; }
   publish() { this.ambient.update(this.workspaces.find(w => w.id === this.activeId), this.connected, !!this.running); this.store.set('tasks', this.tasks.slice(0, 50)); this.send({ type: 'state', state: this.state() }); }
@@ -34,7 +34,7 @@ export class Hub {
         const old = this.store.get<Workspace | null>('running-scope', null);
         if (old && JSON.stringify(old.tabs) !== JSON.stringify(active?.tabs)) this.stop('Workspace tabs changed.');
       }
-      this.suggestions = this.suggestions.filter(s => { try { assertTarget(this.workspaces.find(w => w.id === s.workspaceId), this.activeId, this.tabs.find(t => t.id === s.tabId)); return true; } catch { return false; } });
+      this.retainSuggestions(s => { try { const tab = this.tabs.find(t => t.id === s.tabId); assertTarget(this.workspaces.find(w => w.id === s.workspaceId), this.activeId, tab); return s.sourceUrl === tab?.url && Date.now()-s.createdAt < 600000; } catch { return false; } });
       this.publish();
     } else if (message.type === 'context') this.observe(message.context);
     else if (message.type === 'dismiss') {
@@ -65,8 +65,15 @@ export class Hub {
     if (!tab || tab.url !== context.url || Date.now() - context.observedAt > 60000) return;
     if (context.ambientEpoch !== undefined && context.ambientEpoch !== this.ambient.status?.epoch) return;
     this.contexts.set(context.tabId, context);
-    this.suggestions = this.suggestions.filter(s => Date.now()-s.createdAt < 600000 && (s.tabId !== context.tabId || (s.sourceUrl === context.url && s.visitId === (context.visitId ?? context.version))));
+    this.retainSuggestions(s => Date.now()-s.createdAt < 600000 && (s.tabId !== context.tabId || (s.sourceUrl === context.url && s.visitId === (context.visitId ?? context.version))));
     this.ambient.observe(context); this.publish();
+  }
+  private retainSuggestions(keep: (suggestion: Suggestion) => boolean) {
+    this.suggestions = this.suggestions.filter(s => {
+      if (keep(s)) return true;
+      this.ambient.record('expired', `Offer removed after page/scope change or expiry, without a user response: ${s.title}`, s.workspaceId);
+      return false;
+    });
   }
   stop(reason: string) {
     if (!this.running) return;

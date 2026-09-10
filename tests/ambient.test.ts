@@ -88,3 +88,22 @@ test('first observations explicitly lack a prior baseline; model offers must ref
   ambient.observe(page()); await ambient.evaluate();
   assert.equal(request.events[0].previousText, null); assert.equal(offers.length, 0); close();
 });
+
+test('coalescing page updates preserves the new visit and the original comparison baseline', async () => {
+  const requests: AmbientRequest[] = [];
+  const { ambient, close } = setup(async r => { requests.push(r); return quiet(); });
+  ambient.observe(page());
+  ambient.observe(page('Invoice A loaded'));
+  ambient.observe(page('Invoice A loaded with controls'));
+  await ambient.evaluate();
+  assert.equal(requests[0].events[0].newVisit, true);
+  assert.equal(requests[0].events[0].previousText, null);
+  assert.equal(requests[0].events[0].text, 'Invoice A loaded with controls');
+  ambient.observe(page('Invoice A loaded with controls', 'doc|return'));
+  ambient.observe(page('Invoice A new navigation text', 'doc|return'));
+  await ambient.evaluate();
+  assert.equal(requests[1].events[0].newVisit, true);
+  assert.equal(requests[1].events[0].visitCount, 2);
+  assert.equal(requests[1].events[0].previousText, 'Invoice A loaded with controls');
+  close();
+});

@@ -5,7 +5,7 @@ Verified on 2026-09-10 with Node 25.6.1 and pnpm 10.30.2.
 | Check | Result |
 | --- | --- |
 | Dependency publication dates | All 699 locked registry versions passed the 14-day minimum-age check, including Markdown, transitive and optional packages. |
-| Automated tests | 25 tests passed, including control-level freshness, return visits after acceptance/dismissal, retained browser errors, Markdown rendering, and unsafe-content handling. |
+| Automated tests | 27 tests passed, including control-level freshness, return visits after acceptance/dismissal, retained browser errors, Markdown rendering, and unsafe-content handling. |
 | Type checking | Shared contracts, server, and extension passed. |
 | Production build | WXT Chrome MV3 build passed. |
 | Live Astra connection | Successful API response using the configured model. |
@@ -80,3 +80,19 @@ test ensuring ordinary form fields cannot use Enter.
 The deterministic bill detector now supplies context only. The previous direct
 bill-suggestion trigger has been replaced by model evaluation and remembered
 responses. The older validation sections describe the baseline on which this was built.
+
+## Return-visit offer repair (2026-09-10)
+
+The user reported no visible offer while the remembered summary still described
+one as pending. Live history confirmed the return visit had been observed. Offers
+removed by navigation were not reflected in the model's summary, and coalesced DOM
+updates could also overwrite a new-visit signal before evaluation.
+
+The evaluator now receives the authoritative current offer list; navigation and
+expiry record removal without implying a decline. Only explicit responses impose
+the repeat cooldown, and coalescing preserves the visit and comparison baseline.
+Two regression tests cover these paths, including pending-offer deduplication and
+explicit dismissal. All 27 tests, type checks, and the production build pass.
+A real Astra test with synthetic data offered help on a reopened bill despite a
+stale pending-offer summary, and the declined follow-up still stayed quiet. The
+local backend was restarted; no extension reload is required for this repair.
