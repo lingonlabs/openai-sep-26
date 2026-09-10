@@ -9,6 +9,7 @@ const state = await request('/control/state');
 const command = process.argv[2] ?? 'status';
 if (command === 'status') {
   console.log(JSON.stringify({ connected: state.connected, activeWorkspaceId: state.activeWorkspaceId,
+    ambient: state.ambient && { status: state.ambient.status, lastChecked: state.ambient.lastChecked, reason: state.ambient.reason, error: state.ambient.error, rememberedPages: state.ambient.visits.length },
     workspaces: state.workspaces.map(w => ({ id: w.id, name: w.name, paused: w.paused, tabs: w.tabs.map(t => ({ id: t.id, title: t.title, scope: t.scope, paused: t.paused })) })),
     tasks: state.tasks.map(t => ({ id: t.id, status: t.status, title: t.title, error: t.error, actions: t.activity.length })),
   }, null, 2));
@@ -25,7 +26,9 @@ if (command === 'status') {
   if (!tab) throw new Error('Select Gmail in an active Ambient workspace first.');
   console.log(JSON.stringify(await request('/control/start', { workspaceId: workspace.id,
     prompt: `Test the updated browser search interaction ONLY in Gmail tab ${tab.id}. Inspect, fill the visible Search mail field with "invoice newer_than:90d", then use ENTER on the inspected search field and inspect the results. Verify that the query actually applied. Stop after verifying search or after two failed attempts, and report the exact blocker if any. Do not inspect other tabs, open messages, send anything, change settings, or modify messages. This is a short regression test of search only.` })));
+} else if (command === 'ambient') {
+  console.log(JSON.stringify(state.ambient ?? { status: 'unavailable' }, null, 2));
 } else if (command === 'result') {
   const task = state.tasks.find(t => t.id === process.argv[3]); if (!task) throw new Error('Task not found.');
   console.log(JSON.stringify({ id: task.id, status: task.status, activity: task.activity, messages: task.messages, error: task.error }, null, 2));
-} else throw new Error('Use status, inspect-netsuite, test-gmail-search, or result TASK_ID.');
+} else throw new Error('Use status, ambient, inspect-netsuite, test-gmail-search, or result TASK_ID.');

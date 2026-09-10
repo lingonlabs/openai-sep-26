@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Hub } from '../apps/server/src/hub.js';
 import { Store } from '../apps/server/src/store.js';
+import type { AmbientDriver } from '../apps/server/src/ambient-agent.js';
 import type { AgentDriver } from '../apps/server/src/agent.js';
 import type { BrowserAction, ClientMessage, ServerMessage } from '../packages/shared/src/index.js';
 const workspace = { id: 'close', name: 'September', paused: false, tabs: [
@@ -9,19 +10,20 @@ const workspace = { id: 'close', name: 'September', paused: false, tabs: [
   { id: 2, scope: 'https://mail.google.com/mail/u/0/', title: 'Gmail', paused: false },
 ] };
 const tabs = [{ id: 1, title: 'NetSuite', url: 'https://demo.app.netsuite.com/app/accounting/transactions/vendbill.nl' }, { id: 2, title: 'Gmail', url: 'https://mail.google.com/mail/u/0/#inbox' }];
-const context = { tabId: 1, url: tabs[0].url, title: 'Vendor Bill', version: 'v1', kind: 'bill_form' as const, vendor: '', observedAt: Date.now() };
+const context = { tabId: 1, url: tabs[0].url, title: 'Vendor Bill', version: 'v1', kind: 'bill_form' as const, vendor: '', text: 'New Bill', visitId: 'doc-1', observedAt: Date.now() };
+const mockAmbient: AmbientDriver = async r => ({ decision: 'offer', summary: 'A bill was observed.', reason: 'A selected bill matches the invoice instruction.', instructionId: 'invoices', tabId: r.events[0].tabId, entityKey: r.events[0].text, title: 'Check this bill?', detail: 'Compare invoice evidence.', options: [{ kind: 'task', label: 'Check invoices', prompt: 'Check invoices.' }, { kind: 'task', label: 'Review this bill', prompt: 'Inspect the bill.' }] });
 const action = (tabId: number): BrowserAction => ({ tabId, action: 'inspect', ref: null, version: null, text: null, url: null });
 async function setup(driver: AgentDriver, apiReady = true) {
-  const store = new Store(':memory:'); const hub = new Hub(store, driver, 'gpt-6-astra', apiReady); hub.connected = true;
+  const store = new Store(':memory:'); const hub = new Hub(store, driver, 'gpt-6-astra', apiReady, mockAmbient); hub.connected = true;
   await hub.receive({ type: 'sync', activeWorkspaceId: 'close', workspaces: [structuredClone(workspace)], tabs }); return { hub, store };
 }
 test('ambient suggestion is deduplicated, dismissed, persisted, and invalidated on page changes', async () => {
   const { hub, store } = await setup(async () => ({ text: 'unused', history: [] }));
-  hub.observe(context); hub.observe(context); assert.equal(hub.suggestions.length, 1);
+  hub.observe(context); hub.observe(context); await hub.ambient.evaluate(); assert.equal(hub.suggestions.length, 1);
   await hub.receive({ type: 'dismiss', id: hub.suggestions[0].id }); hub.observe(context); assert.equal(hub.suggestions.length, 0);
-  assert.equal(Object.keys(store.get('dismissed', {})).length, 1);
-  hub.observe({ ...context, vendor: 'Northstar' }); assert.equal(hub.suggestions.length, 1);
-  hub.observe({ ...context, kind: 'page' }); assert.equal(hub.suggestions.length, 0); store.close();
+  assert.ok(hub.ambient.status?.recent.some(e => e.kind === 'response'));
+  hub.observe({ ...context, vendor: 'Northstar', text: 'New Bill Northstar' }); await hub.ambient.evaluate(); assert.equal(hub.suggestions.length, 1);
+  hub.observe({ ...context, kind: 'page', visitId: 'different-page' }); assert.equal(hub.suggestions.length, 0); hub.ambient.cancel(); store.close();
 });
 test('accepted investigation executes across tabs and persists task and coordinator state', async () => {
   const seen: number[] = [];
@@ -32,12 +34,12 @@ test('accepted investigation executes across tabs and persists task and coordina
   };
   const { hub, store } = await setup(driver);
   hub.send = (message: ServerMessage) => { if (message.type === 'command') queueMicrotask(() => { void hub.receive({ type: 'result', id: message.id, ok: true, data: { url: tabs.find(t => t.id === message.args.tabId)!.url, title: 'Page', version: 'v1', text: 'Evidence', elements: [] } }); }); };
-  hub.observe(context);
+  hub.observe(context); await hub.ambient.evaluate();
   await hub.receive({ type: 'start', workspaceId: 'close', suggestionId: hub.suggestions[0].id, prompt: 'Check invoices.' });
   assert.deepEqual(seen, [2, 1]); assert.equal(hub.tasks[0].status, 'completed'); assert.equal(hub.tasks[0].findings.length, 1);
   assert.equal(hub.tasks[0].activity.every(a => a.status === 'done'), true);
   assert.deepEqual(store.get('memory:close', []), ['Found one candidate.']);
-  assert.equal(store.get<unknown[]>(`history:${hub.tasks[0].id}`, []).length, 1); store.close();
+  assert.equal(store.get<unknown[]>(`history:${hub.tasks[0].id}`, []).length, 1); hub.ambient.cancel(); store.close();
 });
 test('only one run may control the browser and Stop rejects in-flight commands', async () => {
   let commandSeen!: () => void; const pending = new Promise<void>(resolve => { commandSeen = resolve; });
@@ -46,7 +48,7 @@ test('only one run may control the browser and Stop rejects in-flight commands',
   const run = hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Inspect.' }); await pending;
   await assert.rejects(hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Competing run.' }), /already/);
   await hub.receive({ type: 'stop' }); await run;
-  assert.equal(hub.tasks[0].status, 'stopped'); assert.equal(hub.running, null); store.close();
+  assert.equal(hub.tasks[0].status, 'stopped'); assert.equal(hub.running, null); hub.ambient.cancel(); store.close();
 });
 test('workspace pause cancels browser work before further commands', async () => {
   let started!: () => void; const signal = new Promise<void>(resolve => { started = resolve; });
@@ -54,16 +56,16 @@ test('workspace pause cancels browser work before further commands', async () =>
   hub.send = m => { if (m.type === 'command') started(); };
   const run = hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Inspect.' }); await signal;
   await hub.receive({ type: 'sync', activeWorkspaceId: 'close', workspaces: [{ ...workspace, paused: true }], tabs }); await run;
-  assert.equal(hub.tasks[0].status, 'stopped'); store.close();
+  assert.equal(hub.tasks[0].status, 'stopped'); hub.ambient.cancel(); store.close();
 });
 test('missing API key cannot silently run a fake investigation', async () => {
   const { hub, store } = await setup(async () => { throw new Error('Should never run'); }, false);
-  await assert.rejects(hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Inspect.' }), /OPENAI_API_KEY/); assert.equal(hub.tasks.length, 0); store.close();
+  await assert.rejects(hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Inspect.' }), /OPENAI_API_KEY/); assert.equal(hub.tasks.length, 0); hub.ambient.cancel(); store.close();
 });
 test('stale suggestion acceptance is rejected', async () => {
   const { hub, store } = await setup(async () => ({ text: 'unused', history: [] }));
-  hub.observe(context); const id = hub.suggestions[0].id; hub.observe({ ...context, kind: 'page' });
-  await assert.rejects(hub.receive({ type: 'start', workspaceId: 'close', suggestionId: id, prompt: 'Inspect.' }), /no longer/); store.close();
+  hub.observe(context); await hub.ambient.evaluate(); const id = hub.suggestions[0].id; hub.observe({ ...context, kind: 'page', visitId: 'different-page' });
+  await assert.rejects(hub.receive({ type: 'start', workspaceId: 'close', suggestionId: id, prompt: 'Inspect.' }), /no longer/); hub.ambient.cancel(); store.close();
 });
 test('read-only tasks cannot click even if the model requests it', async () => {
   let dispatched = false;
@@ -73,22 +75,20 @@ test('read-only tasks cannot click even if the model requests it', async () => {
   });
   hub.send = message => { if (message.type === 'command') dispatched = true; };
   await hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Inspect only.', readOnly: true });
-  assert.equal(dispatched, false); assert.equal(hub.tasks[0].status, 'completed'); store.close();
+  assert.equal(dispatched, false); assert.equal(hub.tasks[0].status, 'completed'); hub.ambient.cancel(); store.close();
 });
 
-test('accepted or dismissed suggestions stay quiet on this bill visit and return on a new visit', async () => {
+test('accepted offers are remembered and execution completion refreshes the baseline', async () => {
   const { hub, store } = await setup(async () => ({ text: 'done', history: [] }));
-  hub.observe({ ...context, visitId: 'document-1' });
+  hub.observe(context); await hub.ambient.evaluate();
   await hub.receive({ type: 'start', workspaceId: 'close', suggestionId: hub.suggestions[0].id, prompt: 'Check.' });
-  hub.observe({ ...context, visitId: 'document-1', version: 'updated-dom' });
+  hub.observe({ ...context, text: 'Agent changed this form', visitId: 'agent-document' });
+  await hub.ambient.evaluate();
   assert.equal(hub.suggestions.length, 0);
-  hub.observe({ ...context, visitId: 'document-2' });
+  assert.ok(hub.ambient.status?.recent.some(e => e.kind === 'task'));
+  hub.observe({ ...context, text: 'Another invoice', visitId: 'user-document' }); await hub.ambient.evaluate();
   assert.equal(hub.suggestions.length, 1);
-  await hub.receive({ type: 'dismiss', id: hub.suggestions[0].id });
-  hub.observe({ ...context, visitId: 'document-2' }); assert.equal(hub.suggestions.length, 0);
-  hub.observe({ ...context, visitId: 'document-2', kind: 'page' });
-  hub.observe({ ...context, visitId: 'document-2' }); assert.equal(hub.suggestions.length, 1);
-  store.close();
+  hub.ambient.cancel(); hub.ambient.cancel(); store.close();
 });
 
 test('browser failure details survive completion and persistence', async () => {
@@ -99,5 +99,5 @@ test('browser failure details survive completion and persistence', async () => {
   hub.send = m => { if (m.type === 'command') queueMicrotask(() => { void hub.receive({ type: 'result', id: m.id, ok: false, error: 'Target changed since inspection.' }); }); };
   await hub.receive({ type: 'start', workspaceId: 'close', prompt: 'Check.' });
   assert.equal(store.tasks()[0].activity[0].error, 'Target changed since inspection.');
-  assert.equal(store.tasks()[0].activity[0].status, 'error'); store.close();
+  assert.equal(store.tasks()[0].activity[0].status, 'error'); hub.ambient.cancel(); store.close();
 });

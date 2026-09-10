@@ -5,7 +5,7 @@ Verified on 2026-09-10 with Node 25.6.1 and pnpm 10.30.2.
 | Check | Result |
 | --- | --- |
 | Dependency publication dates | All 699 locked registry versions passed the 14-day minimum-age check, including Markdown, transitive and optional packages. |
-| Automated tests | 19 tests passed, including control-level freshness, return visits after acceptance/dismissal, retained browser errors, Markdown rendering, and unsafe-content handling. |
+| Automated tests | 25 tests passed, including control-level freshness, return visits after acceptance/dismissal, retained browser errors, Markdown rendering, and unsafe-content handling. |
 | Type checking | Shared contracts, server, and extension passed. |
 | Production build | WXT Chrome MV3 build passed. |
 | Live Astra connection | Successful API response using the configured model. |
@@ -54,3 +54,29 @@ startup event clears stale tab IDs. The first live retry filled the search field
 successfully and exposed its “Ask Gmail” label. Search recognition now uses the
 control’s search role, region, type, or Gmail query-field identity, with a regression
 test ensuring ordinary form fields cannot use Enter.
+
+## Persistent ambient agent (2026-09-10)
+
+- Standing instructions, compact summaries, observed visits, offer/response history,
+  and task outcomes persist per workspace in SQLite.
+- Automated tests cover memory restoration, duplicate observations, reloads,
+  workspace isolation, instruction changes, cancellation of in-flight inference,
+  suppression during execution, fresh baselines after execution, stale responses,
+  and invalid model references. The full suite has 25 passing tests.
+- Type checks and production build pass. No dependencies were added in this change;
+  the existing 699-package release-age audit remains applicable.
+- A real Astra test using synthetic observations produced a question with choices
+  on a fifth observed invoice visit. After an explicit decline, the next evaluation
+  stayed quiet. Run `node --import tsx --env-file-if-exists=.env apps/server/src/smoke-ambient.ts`.
+- The local Help me with… preview was inspected for instructions, toggles, editable
+  text fields, remembered context, recent decisions, and status.
+- User reloaded the extension and confirmed the new tab is visible. Live workspace
+  observations reached Astra. It offered help on the NetSuite bill page and stayed
+  quiet on subsequent minor changes while the offer remained pending.
+- Astra correctly reported that the onboarding sheet exposed no vendor rows. New
+  vendor detection in this real Sheet is not validated and needs a browser-content
+  capture improvement. No claim of complete-sheet monitoring is made.
+
+The deterministic bill detector now supplies context only. The previous direct
+bill-suggestion trigger has been replaced by model evaluation and remembered
+responses. The older validation sections describe the baseline on which this was built.

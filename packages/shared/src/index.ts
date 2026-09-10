@@ -10,6 +10,7 @@ export type Workspace = z.infer<typeof WorkspaceSchema>;
 export const ContextSchema = z.object({
   tabId: z.number().int(), url: z.string(), title: z.string(), version: z.string(),
   kind: z.enum(['bill_form', 'page']), vendor: z.string().max(300), observedAt: z.number(), visitId: z.string().optional(),
+  text: z.string().max(16000).optional(), baseline: z.boolean().optional(), ambientEpoch: z.number().optional(),
 });
 export type PageContext = z.infer<typeof ContextSchema>;
 export const ActionSchema = z.object({
@@ -35,14 +36,31 @@ export const FindingSchema = z.object({
   explanation: z.string(), sources: z.array(z.object({ title: z.string(), url: z.string().url() })).min(1),
 });
 export type Finding = z.infer<typeof FindingSchema> & { id: string };
-export type Suggestion = { id: string; workspaceId: string; tabId: number; version: string; title: string; detail: string; vendor: string; key: string; createdAt: number };
+export const HelpInstructionSchema = z.object({ id: z.string().max(100), text: z.string().min(1).max(2000), enabled: z.boolean() });
+export type HelpInstruction = z.infer<typeof HelpInstructionSchema>;
+export const AmbientPreferencesSchema = z.object({ enabled: z.boolean(), instructions: z.array(HelpInstructionSchema).max(12) });
+export type AmbientPreferences = z.infer<typeof AmbientPreferencesSchema>;
+export type ActionOption = { label: string; prompt: string; kind?: 'task' | 'dismiss' };
+export type AmbientStatus = {
+  workspaceId: string; preferences: AmbientPreferences; status: 'watching' | 'evaluating' | 'paused' | 'task_active' | 'error';
+  summary: string; reason: string; lastChecked: number | null; error?: string; epoch: number;
+  recent: { at: number; kind: string; text: string }[];
+  visits: { url: string; title: string; count: number; lastSeen: number }[];
+};
+export const defaultAmbientPreferences = (): AmbientPreferences => ({ enabled: true, instructions: [
+  { id: 'invoices', text: 'When I open an invoice or a new bill, offer to check the supporting email and whether it is already recorded in NetSuite.', enabled: true },
+  { id: 'vendors', text: 'When a new vendor appears in my onboarding sheet, offer to check NetSuite and prepare a vendor record for review.', enabled: true },
+  { id: 'revisits', text: 'If I repeatedly return to the same page or seem stuck after a failed task, ask whether I would like help. Do not assume something is wrong.', enabled: true },
+] });
+export type Suggestion = { id: string; workspaceId: string; tabId: number; version: string; title: string; detail: string; vendor: string; key: string; createdAt: number;
+  options?: ActionOption[]; sourceUrl?: string; visitId?: string; instructionId?: string; reason?: string };
 export type Task = {
   id: string; workspaceId: string; title: string; status: 'running' | 'completed' | 'stopped' | 'failed';
   createdAt: number; updatedAt: number; messages: { role: 'user' | 'assistant'; text: string }[];
   activity: { id: string; text: string; at: number; status: 'working' | 'done' | 'error'; detail?: string; error?: string }[];
   findings: Finding[]; error?: string; readOnly?: boolean;
 };
-export type ServerState = { apiReady: boolean; model: string; tasks: Task[]; suggestions: Suggestion[]; runningTaskId: string | null };
+export type ServerState = { apiReady: boolean; model: string; tasks: Task[]; suggestions: Suggestion[]; runningTaskId: string | null; ambient?: AmbientStatus };
 export type ExtensionState = {
   workspaces: Workspace[]; activeWorkspaceId: string | null; tabs: BrowserTab[];
   connection: 'offline' | 'connecting' | 'connected'; server: ServerState; error: string | null;
@@ -64,6 +82,8 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('sync'), workspaces: z.array(WorkspaceSchema).max(20), activeWorkspaceId: z.string().nullable(), tabs: z.array(TabSchema).max(500) }),
   z.object({ type: z.literal('context'), context: ContextSchema }),
   z.object({ type: z.literal('dismiss'), id: z.string() }),
+  z.object({ type: z.literal('ambient:settings'), workspaceId: z.string(), preferences: AmbientPreferencesSchema }),
+  z.object({ type: z.literal('ambient:forget'), workspaceId: z.string() }),
   z.object({ type: z.literal('start'), workspaceId: z.string(), prompt: z.string().min(1).max(12000), taskId: z.string().optional(), suggestionId: z.string().optional(), readOnly: z.boolean().optional() }),
   z.object({ type: z.literal('stop') }),
   z.object({ type: z.literal('result'), id: z.string(), ok: z.boolean(), data: z.unknown().optional(), error: z.string().optional() }),

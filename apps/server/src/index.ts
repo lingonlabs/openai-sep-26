@@ -89,5 +89,5 @@ await app.listen({ host: '127.0.0.1', port });
 console.log(`Ambient is running at http://127.0.0.1:${port}`);
 console.log(`Pairing token file: ${tokenFile}`);
 console.log(`Astra API: ${hub.apiReady ? 'key configured' : 'key missing'}. Tracing disabled. Local data: ${dataDir}`);
-const shutdown = async () => { hub.stop('Server shutting down.'); active?.close(); await app.close(); store.close(); process.exit(0); };
+const shutdown = async () => { hub.ambient.cancel(); hub.stop('Server shutting down.'); active?.close(); await app.close(); store.close(); process.exit(0); };
 process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);

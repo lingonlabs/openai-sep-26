@@ -38,7 +38,7 @@ export default defineBackground(() => {
   })();
   function send(message: unknown) { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
   function sync() { send({ type: 'sync', workspaces: state.workspaces, activeWorkspaceId: state.activeWorkspaceId, tabs: state.tabs }); }
-  async function broadcast(reset = false) {
+  async function broadcast(reset = false, baseline = false) {
     const runningTask = state.server.tasks.find(t => t.id === state.server.runningTaskId);
     void chrome.runtime.sendMessage({ type: 'state:changed', state }).catch(() => {});
     for (const tab of state.tabs) {
@@ -47,6 +47,7 @@ export default defineBackground(() => {
       const active = !!member && withinScope(tab.url, member.scope);
       void chrome.tabs.sendMessage(tab.id, { type: 'presence', active, scope: member?.scope, paused: !!workspace?.paused || !!member?.paused,
         working: !!state.server.runningTaskId, taskId: state.server.runningTaskId, progress: runningTask ? taskProgress(runningTask) : '',
+        ambientEnabled: state.connection === 'connected' && (state.server.ambient?.preferences.enabled ?? false) && (state.server.ambient?.preferences.instructions.some(i => i.enabled) ?? false), ambientEpoch: state.server.ambient?.epoch ?? 0, baseline,
         suggestion: state.server.suggestions.find(s => s.tabId === tab.id && s.workspaceId === workspace?.id) ?? null, top, reset,
       }, { frameId: 0 }).catch(() => {});
     }
@@ -86,8 +87,9 @@ export default defineBackground(() => {
       let message: ServerMessage; try { message = JSON.parse(event.data); } catch { return; }
       if (message.type === 'state') {
         const justConnected = state.connection !== 'connected';
+        const justFinished = !!state.server.runningTaskId && !message.state.runningTaskId;
         if (message.state.runningTaskId && message.state.runningTaskId !== state.server.runningTaskId) cancelled.delete(message.state.runningTaskId);
-        state.connection = 'connected'; state.error = null; state.server = message.state; void broadcast(justConnected);
+        state.connection = 'connected'; state.error = null; state.server = message.state; void broadcast(justConnected || justFinished, justFinished);
       }
       else if (message.type === 'error') { state.error = message.message; void broadcast(); }
       else if (message.type === 'cancel') { cancelled.add(message.taskId); }
@@ -163,8 +165,8 @@ export default defineBackground(() => {
     void ready.then(async () => {
       if (message.type === 'page:ready') { await broadcast(true); return { ok: true }; }
       if (message.type === 'page:context' && sender.tab?.id) {
-        if (state.connection !== 'connected') return { ok: true };
-        send({ type: 'context', context: { ...message.context, tabId: sender.tab.id, url: sender.url ?? message.context.url } }); return { ok: true };
+        if (state.connection !== 'connected' || state.server.runningTaskId) return { ok: true };
+        send({ type: 'context', context: { ...message.context, visitId: `${sender.documentId ?? sender.tab.id}|${message.context.visitId}`, tabId: sender.tab.id, url: sender.url ?? message.context.url } }); return { ok: true };
       }
       if (message.type === 'ui:get' && fromPanel) { await refreshTabs(); return state; }
       if (message.type === 'ui:pair' && fromPanel) {
@@ -190,9 +192,15 @@ export default defineBackground(() => {
       else if (message.type === 'presence:position') { top = String(message.top); await chrome.storage.local.set({ presenceTop: top }); }
       else if (message.type === 'ui:stop') { if (state.server.runningTaskId) cancelled.add(state.server.runningTaskId); send({ type: 'stop' }); }
       else if (message.type === 'ui:dismiss') { send({ type: 'dismiss', id: message.id }); }
+      else if ((message.type === 'ui:ambient-settings' || message.type === 'ui:ambient-forget') && fromPanel) {
+        send({ type: message.type === 'ui:ambient-settings' ? 'ambient:settings' : 'ambient:forget', workspaceId: state.activeWorkspaceId, preferences: message.preferences });
+      }
       else if (message.type === 'ui:accept') {
         const s = state.server.suggestions.find(s => s.id === message.id); if (!s) throw new Error('Suggestion expired.');
-        send({ type: 'start', workspaceId: s.workspaceId, suggestionId: s.id, prompt: `Check the selected Gmail tab for vendor invoices${s.vendor ? ` for ${s.vendor}` : ''} that may need recording. Compare them with the selected NetSuite tab and vendor sheet if present. Report findings with evidence and search scope. Do not submit or send anything.` });
+        if (!message.text?.trim() && s.options?.[Number(message.option)]?.kind === 'dismiss') { send({ type: 'dismiss', id: s.id }); return { ok: true, started: false }; }
+        const chosen = typeof message.text === 'string' && message.text.trim() ? message.text.trim() : s.options?.[Number(message.option)]?.prompt;
+        if (!chosen) throw new Error('Choose an option or write what you would like help with.');
+        send({ type: 'start', workspaceId: s.workspaceId, suggestionId: s.id, prompt: `${chosen}\n\nContext for this request: ${s.title}. ${s.detail}. Reinspect the selected pages before acting. Leave changes for human review; do not save, submit, or send.` });
       } else if (message.type === 'ui:start' && fromPanel) {
         if (state.connection !== 'connected') throw new Error('Connect to the local server first.');
         send({ type: 'start', workspaceId: state.activeWorkspaceId, prompt: message.prompt, taskId: message.taskId });
@@ -202,6 +210,7 @@ export default defineBackground(() => {
     return true;
   });
   chrome.tabs.onUpdated.addListener((_id, change) => { if (change.url || change.status === 'complete') void ready.then(async () => { await refreshTabs(); await inject(); }); });
+  chrome.tabs.onActivated.addListener(({ tabId }) => { void ready.then(async () => { if (!state.server.runningTaskId) await chrome.tabs.sendMessage(tabId, { type: 'ambient:activated' }, { frameId: 0 }).catch(() => {}); }); });
   chrome.tabs.onRemoved.addListener(() => { void ready.then(async () => { await refreshTabs(); await persist(); }); });
   chrome.tabs.onCreated.addListener(() => { void ready.then(refreshTabs); });
   chrome.alarms.onAlarm.addListener(() => { void ready.then(() => { if (token) connect(); send({ type: 'ping' }); }); });

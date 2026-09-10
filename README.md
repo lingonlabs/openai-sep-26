@@ -1,8 +1,9 @@
 # Ambient · Close companion
 
-A local Chrome extension prototype for ambient finance work. It recognizes a new
-NetSuite vendor bill, offers to investigate Gmail, and lets Astra inspect the
-selected browser tabs, compare invoice evidence, and prepare a bill for review.
+A local Chrome extension prototype for ambient finance work. A persistent Astra
+companion interprets changes in selected tabs using your standing instructions,
+offers choices, and remembers visits and task outcomes. When you choose an action,
+a separate execution agent investigates evidence or prepares records for review.
 
 This is one of two independent **full-stack prototypes**. After comparing them,
 the team will select a foundation and improve focused areas such as NetSuite
@@ -34,7 +35,10 @@ internet. The key stays on the server. SDK tracing is disabled in this prototype
    not the OpenAI API key. Each developer gets their own local token and database.
 6. Create a workspace. Select the NetSuite sandbox, Gmail, and optional Sheet tabs.
    Chrome asks for access to the selected sites.
-7. Open **Add New Bill** in NetSuite. The floating icon offers an investigation.
+7. Open **Help me with…** to review or edit the workspace’s standing instructions.
+8. Open **Add New Bill** in NetSuite. Astra evaluates the observed page and can offer
+   choices through the floating icon and workspace panel. Choose an option or write
+   something else to begin an execution task.
 
 After rebuilding, use **Reload** on the extension card and reopen its panel.
 Extension reloads retain selected tabs. After a full browser restart, reselect the workspace tabs; stale tab IDs are
@@ -48,7 +52,7 @@ Open these in the same Chrome profile and select them in a new workspace:
 - http://127.0.0.1:4318/fixtures/gmail
 - http://127.0.0.1:4318/fixtures/vendors
 
-Click **Add New Bill** on the ledger fixture, accept **Check invoices**, and watch
+Click **Add New Bill** on the ledger fixture, choose an offered action, and watch
 Activity. The seeded examples include a recorded invoice (NS-1041), a candidate
 (NS-1042), and a vendor missing from the register (Acorn Consulting). The fixture
 banner explicitly identifies synthetic data. Actual investigations use Astra;
@@ -63,9 +67,12 @@ workspace does not control browser tabs and its investigation button is disabled
   pairing, suggestions, activity, conversation, findings, and source links.
 - Programmatic injection only into selected tabs; floating icon, movable vertical
   position, contextual suggestion, pause/remove controls, and a Stop action.
-- A local rule recognizes new vendor-bill forms. Context changes are debounced.
-  Accepted/dismissed suggestions stay quiet during the current bill visit; reopening
-  the bill starts a fresh visit and can offer the suggestion again.
+- Persistent ambient agent per workspace: editable standing instructions, compact
+  memory, visit counts, recent decisions, and task outcomes in SQLite.
+- Bounded page-text observations are debounced and evaluated by Astra. The existing
+  bill-form rule provides a hint; it no longer directly triggers suggestions.
+- Offers have 2–3 choices plus free text. Dismiss choices do not start browser tasks.
+  Duplicate opportunities have a cooldown and response history.
 - Node/Fastify WebSocket bridge with token pairing and an extension-origin check.
 - Agents SDK with `gpt-6-astra`, browser tools, typed findings, bounded tasks,
   streaming responses, and SQLite persistence.
@@ -98,9 +105,14 @@ iframes, and Google Sheets canvas behavior are likely areas for iteration.
   input. Chrome may show its normal debugger attachment indicator.
 - A source is recorded only after its page has been inspected in the current run.
   Missing matches are reported with search limitations, not as proof of absence.
-- Ambient detection is event-driven and currently specific to new-bill forms.
-  Astra does the accepted investigation; generalized model-driven ambient evaluation
-  is a later experiment. Discarded or sleeping tabs are not continuously observed.
+- Ambient monitoring uses rendered page text, headings, and the visible vendor
+  field. No automatic screenshots or debugger sessions are used for monitoring.
+  Canvas-only Sheet rows, unloaded data, and attachments may be unobservable.
+- Background DOM observers, polling, and input listeners stop during execution.
+  In-flight ambient inference is cancelled; late responses are discarded. The first
+  observations after execution establish a baseline and cannot trigger suggestions.
+- Visit counts reflect observed page entries and returns to tabs, not every DOM
+  mutation. Memory is bounded, local, workspace-specific, and clearable from the UI.
 - Workspace switching pauses the previous workspace. Closing selected tabs updates
   membership and stops affected work. Data stays in `.local/`, excluded from Git.
 
@@ -138,12 +150,14 @@ node --import tsx --env-file-if-exists=.env apps/server/src/smoke-workflow.ts
 ```
 
 See `docs/VALIDATION.md` for the current verification record and remaining checks.
+`docs/AMBIENT.md` describes monitoring, memory, pause/resume, and choice handling.
 
 For a local development test through the paired extension, first select NetSuite
 in an active workspace, then run:
 
 ```sh
 node scripts/local-control.mjs status
+node scripts/local-control.mjs ambient
 node scripts/local-control.mjs inspect-netsuite
 node scripts/local-control.mjs test-gmail-search
 node scripts/local-control.mjs result TASK_ID
@@ -162,7 +176,9 @@ apps/extension/entrypoints/background.ts       workspace and command bridge
 apps/extension/entrypoints/observer.content.ts ambient icon and DOM tools
 apps/extension/src/App.tsx                    side-panel product experience
 apps/server/src/hub.ts                       coordinator lifecycle and task state
-apps/server/src/agent.ts                     Astra instructions and tools
+apps/server/src/agent.ts                     execution instructions and tools
+apps/server/src/ambient.ts                   ambient lifecycle and persistent memory
+apps/server/src/ambient-agent.ts             Astra evaluation and structured choices
 apps/server/src/store.ts                     local SQLite persistence
 packages/shared/src/index.ts                 contracts and scope rules
 tests/                                      workflow and boundary tests

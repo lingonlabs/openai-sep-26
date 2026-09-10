@@ -13,6 +13,9 @@ export default defineContentScript({
     let suggestion: Suggestion | null = null, lastContext = '', actionUntil = 0, scope = '';
     let refs = new Map<string, { element: HTMLElement; fingerprint: string }>();
     let inspectionVersion = '', inspectedUrl = '', progress = '';
+    let ambientEnabled = false, ambientEpoch = 0, baselineNeeded = false, visitId = 'initial';
+    let lastObservedUrl = location.href, lastKind = '';
+    let monitoring = false, poll: ReturnType<typeof setInterval> | undefined;
     const host = document.createElement('div'); host.id = 'ambient-close-presence';
     const shadow = host.attachShadow({ mode: 'closed' });
     const version = () => `${documentId}:${revision}:${location.href}`;
@@ -49,7 +52,7 @@ export default defineContentScript({
         bubble.append(eyebrow, title, detail);
         if (working) bubble.append(button('Stop task', 'stop', () => { void send({ type: 'ui:stop' }); }));
         else if (suggestion && !paused) {
-          bubble.append(button('Check invoices', 'primary', () => { void send({ type: 'ui:accept', id: suggestion!.id }); }), button('Dismiss', 'plain', () => { void send({ type: 'ui:dismiss', id: suggestion!.id }); suggestion = null; expanded = false; render(); }));
+          bubble.append(button('Choose how to help ↗', 'primary', () => { void send({ type: 'panel:open' }); }), button('Dismiss', 'plain', () => { void send({ type: 'ui:dismiss', id: suggestion!.id }); suggestion = null; expanded = false; render(); }));
         }
         bubble.append(button('Open assistant ↗', 'plain', () => { void send({ type: 'panel:open' }); }));
         if (expanded) {
@@ -68,7 +71,7 @@ export default defineContentScript({
         elements.push({ ref, tag: e.tagName.toLowerCase(), role: isSearchField(e, text, location.hostname) ? 'searchbox' : e.getAttribute('role') || '', label: text, value: 'value' in e ? String(e.value).slice(0, 500) : undefined, inputType: e.getAttribute('type') || undefined });
         if (elements.length >= 180) break;
       }
-      inspectionVersion = version(); inspectedUrl = location.href;
+      revision++; inspectionVersion = version(); inspectedUrl = location.href;
       return { url: location.href, title: document.title, version: inspectionVersion, text: document.body.innerText.slice(0, 24000), elements };
     }
     async function execute(action: BrowserAction): Promise<BrowserObservation> {
@@ -112,31 +115,51 @@ export default defineContentScript({
       revision++; return inspect();
     }
     async function observe() {
-      if (!active || paused || working || Date.now() < actionUntil) return;
+      if (!active || paused || working || !ambientEnabled || Date.now() < actionUntil) return;
       const heading = [...document.querySelectorAll<HTMLElement>('h1,h2,[role="heading"],.uir-record-type')].filter(visible).map(e => e.textContent).join(' ').slice(0, 1000);
       const hasForm = [...document.querySelectorAll<HTMLElement>('form,input[name*="entity"],input[id*="entity"],input[name*="vendor"]')].some(visible);
       const vendorInput = document.querySelector<HTMLInputElement>('input[name="entity_display"],input[id="entity_display"],input[name="vendor"],input[aria-label="Vendor"]');
       const vendor = vendorInput?.value?.slice(0, 300) ?? '';
       const kind = detectBillForm(location.href, heading, hasForm) ? 'bill_form' : 'page';
-      const context = { tabId: 0, url: location.href, title: document.title, version: version(), visitId: documentId, kind, vendor, observedAt: Date.now() };
-      const fingerprint = `${location.href}:${kind}:${vendor}`;
+      if (location.href !== lastObservedUrl || (lastKind && lastKind !== kind)) visitId = crypto.randomUUID();
+      lastObservedUrl = location.href; lastKind = kind;
+      const text = [heading, vendor ? `Selected vendor: ${vendor}` : '', document.body.innerText].filter(Boolean).join('\n').slice(0, 16000);
+      const context = { tabId: 0, url: location.href, title: document.title, version: version(), visitId, kind, vendor, text, baseline: baselineNeeded, ambientEpoch, observedAt: Date.now() };
+      const fingerprint = JSON.stringify([location.href, visitId, kind, vendor, text]);
       if (fingerprint === lastContext) return; lastContext = fingerprint;
-      await send({ type: 'page:context', context });
+      baselineNeeded = false; await send({ type: 'page:context', context });
     }
     let debounce: ReturnType<typeof setTimeout>;
-    new MutationObserver(mutations => {
+    const onInput = (e: Event) => { if (!own(e.target as Node)) { revision++; clearTimeout(debounce); debounce = setTimeout(() => { void observe(); }, 1200); } };
+    const observer = new MutationObserver(mutations => {
       if (mutations.every(m => own(m.target) || [...m.addedNodes, ...m.removedNodes].every(n => n === host) && m.type === 'childList')) return;
-      revision++; clearTimeout(debounce); debounce = setTimeout(() => { void observe(); }, 650);
-    }).observe(document.body ?? document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
-    document.addEventListener('input', e => { if (!own(e.target as Node)) { revision++; clearTimeout(debounce); debounce = setTimeout(() => { void observe(); }, 600); } }, true);
-    setInterval(() => { void observe(); }, 2500);
+      revision++; clearTimeout(debounce); debounce = setTimeout(() => { void observe(); }, 1200);
+    });
+    function setMonitoring() {
+      const enabled = active && !paused && !working && ambientEnabled;
+      if (enabled === monitoring) return;
+      monitoring = enabled;
+      if (enabled) {
+        observer.observe(document.body ?? document.documentElement, { childList: true, subtree: true, attributes: true, characterData: true });
+        document.addEventListener('input', onInput, true);
+        poll = setInterval(() => { void observe(); }, 5000);
+      } else {
+        observer.disconnect(); document.removeEventListener('input', onInput, true);
+        clearTimeout(debounce); if (poll) clearInterval(poll); poll = undefined;
+      }
+    }
     chrome.runtime.onMessage.addListener((message, _sender, respond) => {
       if (message.type === 'observer:ping') { respond({ ok: true }); }
-      else if (message.type === 'presence') {
+      else if (message.type === 'ambient:activated') {
+        if (!working && active) { visitId = crypto.randomUUID(); lastContext = ''; void observe(); } respond({ ok: true });
+      } else if (message.type === 'presence') {
+        if (message.working || message.baseline) baselineNeeded = true;
+        if (message.ambientEpoch !== ambientEpoch) lastContext = '';
+        ambientEpoch = message.ambientEpoch ?? 0; ambientEnabled = !!message.ambientEnabled;
         active = message.active; paused = message.paused; working = message.working; taskId = message.taskId; suggestion = message.suggestion; scope = message.scope ?? ''; progress = message.progress ?? '';
         if (message.top) host.style.top = message.top;
         if (message.reset) lastContext = '';
-        render(); void observe(); respond({ ok: true });
+        render(); setMonitoring(); void observe(); respond({ ok: true });
       } else if (message.type === 'execute') {
         void execute(message.action).then(data => respond({ ok: true, data }), error => respond({ ok: false, error: String(error.message ?? error) })); return true;
       }

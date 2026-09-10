@@ -3,29 +3,30 @@ import { assertTarget, withinScope, ObservationSchema, type BrowserTab, type Wor
 import type { AgentInputItem } from '@openai/agents';
 import type { Store } from './store.js';
 import type { AgentDriver } from './agent.js';
+import { Ambient } from './ambient.js';
+import { driveAmbient, type AmbientDriver } from './ambient-agent.js';
 
 type Pending = { resolve: (value: BrowserObservation) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> };
 export class Hub {
   workspaces: Workspace[] = []; tabs: BrowserTab[] = []; activeId: string | null = null;
   tasks: Task[]; suggestions: Suggestion[] = []; running: { task: Task; controller: AbortController } | null = null;
   private contexts = new Map<number, PageContext>();
-  private visits = new Map<number, string>();
   private observations = new Map<number, BrowserObservation>();
-  private dismissed: Record<string, number>;
+  readonly ambient: Ambient;
   private pending = new Map<string, Pending>();
   send: (message: ServerMessage) => void = () => {};
   connected = false;
-  constructor(readonly store: Store, readonly driver: AgentDriver, readonly model: string, readonly apiReady: boolean) {
+  constructor(readonly store: Store, readonly driver: AgentDriver, readonly model: string, readonly apiReady: boolean, ambientDriver: AmbientDriver = driveAmbient) {
     this.tasks = store.tasks().map(task => task.status === 'running' ? { ...task, status: 'stopped', error: 'Backend restarted. Review the browser before continuing.' } : task);
-    this.dismissed = store.get('dismissed', {});
+    this.ambient = new Ambient(store, ambientDriver, model, apiReady, () => this.publish(), suggestion => { this.suggestions = [suggestion]; this.publish(); });
   }
-  state(): ServerState { return { apiReady: this.apiReady, model: this.model, tasks: this.tasks, suggestions: this.suggestions, runningTaskId: this.running?.task.id ?? null }; }
-  publish() { this.store.set('tasks', this.tasks.slice(0, 50)); this.send({ type: 'state', state: this.state() }); }
+  state(): ServerState { return { apiReady: this.apiReady, model: this.model, tasks: this.tasks, suggestions: this.suggestions, runningTaskId: this.running?.task.id ?? null, ambient: this.ambient.status }; }
+  publish() { this.ambient.update(this.workspaces.find(w => w.id === this.activeId), this.connected, !!this.running); this.store.set('tasks', this.tasks.slice(0, 50)); this.send({ type: 'state', state: this.state() }); }
   async receive(message: ClientMessage) {
     if (message.type === 'sync') {
       this.workspaces = message.workspaces; this.tabs = message.tabs; this.activeId = message.activeWorkspaceId;
       for (const [id, context] of this.contexts) {
-        if (this.tabs.find(t => t.id === id)?.url !== context.url) { this.contexts.delete(id); this.visits.delete(id); }
+        if (this.tabs.find(t => t.id === id)?.url !== context.url) { this.contexts.delete(id); }
       }
       const active = this.workspaces.find(w => w.id === this.activeId);
       if (this.running && (this.running.task.workspaceId !== this.activeId || active?.paused || !active)) this.stop('Workspace paused or switched.');
@@ -38,8 +39,12 @@ export class Hub {
     } else if (message.type === 'context') this.observe(message.context);
     else if (message.type === 'dismiss') {
       const suggestion = this.suggestions.find(s => s.id === message.id);
-      if (suggestion) { this.dismissed[suggestion.key] = Date.now(); this.store.set('dismissed', this.dismissed); }
+      if (suggestion) this.ambient.dismiss(suggestion);
       this.suggestions = this.suggestions.filter(s => s.id !== message.id); this.publish();
+    } else if (message.type === 'ambient:settings' || message.type === 'ambient:forget') {
+      if (message.workspaceId !== this.activeId) throw new Error('Select that workspace first.');
+      this.suggestions = [];
+      if (message.type === 'ambient:settings') this.ambient.settings(message.preferences); else this.ambient.forget();
     } else if (message.type === 'start') await this.start(message);
     else if (message.type === 'stop') this.stop('Stopped by you. Inspect any form changes before continuing.');
     else if (message.type === 'result') {
@@ -54,22 +59,14 @@ export class Hub {
     } else if (message.type === 'ping') this.send({ type: 'pong' });
   }
   observe(context: PageContext) {
+    if (this.running) return;
     try { assertTarget(this.workspaces.find(w => w.id === this.activeId), this.activeId, this.tabs.find(t => t.id === context.tabId)); } catch { return; }
     const tab = this.tabs.find(t => t.id === context.tabId);
     if (!tab || tab.url !== context.url || Date.now() - context.observedAt > 60000) return;
-    const previous = this.contexts.get(context.tabId);
-    if (!previous || previous.kind !== context.kind || previous.visitId !== context.visitId || previous.url !== context.url)
-      this.visits.set(context.tabId, randomUUID());
+    if (context.ambientEpoch !== undefined && context.ambientEpoch !== this.ambient.status?.epoch) return;
     this.contexts.set(context.tabId, context);
-    this.suggestions = this.suggestions.filter(s => s.tabId !== context.tabId || (context.kind === 'bill_form' && s.vendor === context.vendor));
-    if (context.kind !== 'bill_form' || this.running) { this.publish(); return; }
-    const key = `${this.activeId}:${context.tabId}:visit:${this.visits.get(context.tabId)}:bill:${context.vendor}`;
-    this.suggestions = this.suggestions.filter(s => s.tabId !== context.tabId || s.key === key);
-    if (Date.now() - (this.dismissed[key] ?? 0) < 24 * 3600000 || this.suggestions.some(s => s.key === key)) return;
-    this.suggestions.push({ id: randomUUID(), workspaceId: this.activeId!, tabId: context.tabId, version: context.version,
-      title: context.vendor ? `Check invoices for ${context.vendor}?` : 'Check Gmail before entering this bill?',
-      detail: 'I can compare emailed invoices with NetSuite and flag what may still need recording.', vendor: context.vendor, key, createdAt: Date.now() });
-    this.publish();
+    this.suggestions = this.suggestions.filter(s => Date.now()-s.createdAt < 600000 && (s.tabId !== context.tabId || (s.sourceUrl === context.url && s.visitId === (context.visitId ?? context.version))));
+    this.ambient.observe(context); this.publish();
   }
   stop(reason: string) {
     if (!this.running) return;
@@ -79,7 +76,7 @@ export class Hub {
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error(reason)); }
     this.pending.clear(); this.publish();
   }
-  disconnect() { this.connected = false; this.stop('Browser disconnected. Reconnect and review the page before continuing.'); this.suggestions = []; }
+  disconnect() { this.connected = false; this.stop('Browser disconnected. Reconnect and review the page before continuing.'); this.suggestions = []; this.ambient.update(this.workspaces.find(w => w.id === this.activeId), false, !!this.running); }
   private async browser(action: BrowserAction, task: Task, signal: AbortSignal): Promise<BrowserObservation> {
     signal.throwIfAborted();
     if (task.readOnly && !['inspect', 'screenshot'].includes(action.action)) throw new Error('This task is read-only. Only inspect and screenshot are permitted.');
@@ -112,8 +109,8 @@ export class Hub {
     if (message.suggestionId) {
       const s = this.suggestions.find(s => s.id === message.suggestionId && s.workspaceId === workspace.id);
       const context = s && this.contexts.get(s.tabId);
-      if (!s || context?.kind !== 'bill_form' || context.vendor !== s.vendor) throw new Error('This suggestion is no longer current. Inspect the page and try again.');
-      this.dismissed[s.key] = Date.now(); this.store.set('dismissed', this.dismissed);
+      if (!s || !context || s.sourceUrl !== context.url || s.visitId !== (context.visitId ?? context.version) || Date.now()-s.createdAt > 600000) throw new Error('This suggestion is no longer current. Inspect the page and try again.');
+      this.ambient.dismiss(s, `Accepted: ${message.prompt.slice(0,500)}`);
     }
     let task = message.taskId ? this.tasks.find(t => t.id === message.taskId && t.workspaceId === workspace.id) : undefined;
     if (message.taskId && !task) throw new Error('Task not found in this workspace.');
@@ -131,7 +128,7 @@ export class Hub {
     try {
       const result = await this.driver({ prompt: message.prompt, workspace, model: this.model, signal: controller.signal,
         history: this.store.get<AgentInputItem[]>(`history:${task.id}`, []),
-        memory: this.store.get<string[]>(`memory:${workspace.id}`, []).slice(-8).join('\n'),
+        memory: [this.ambient.status?.summary ?? '', ...this.store.get<string[]>(`memory:${workspace.id}`, []).slice(-8)].join('\n'),
         browser: action => this.browser(action, task!, controller.signal),
         finding: finding => { task!.findings.push({ ...finding, id: randomUUID() }); this.publish(); },
         delta: text => { assistantMessage.text += text; this.send({ type: 'state', state: this.state() }); },
@@ -146,7 +143,9 @@ export class Hub {
       // An interrupted run may have changed the page. Continuation starts with a fresh inspection.
       if (!assistantMessage.text) task.messages.pop();
     } finally {
-      clearTimeout(timeout); task.updatedAt = Date.now(); this.running = null; this.publish();
+      clearTimeout(timeout); task.updatedAt = Date.now();
+      this.ambient.record('task', `${task.status}: ${task.title}. ${task.error || assistantMessage.text.slice(0,1000)}`, workspace.id);
+      this.running = null; this.publish();
     }
   }
 }
