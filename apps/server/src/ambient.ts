@@ -3,7 +3,7 @@ import { assertTarget, defaultAmbientPreferences, type AmbientPreferences, type 
 import { AmbientDecisionSchema, type AmbientDriver, type AmbientEvent } from './ambient-agent.js';
 import type { Store } from './store.js';
 
-type PageMemory = { url: string; title: string; count: number; lastSeen: number; visitId: string; text: string; hash: string };
+type PageMemory = { url: string; title: string; count: number; lastSeen: number; visitId: string; text: string; hash: string; image?: string };
 type Memory = { summary: string; pages: Record<string, PageMemory>; recent: AmbientStatus['recent']; offered: Record<string, number>; responded?: Record<string, number>; lastChecked: number | null; reason: string };
 const emptyMemory = (): Memory => ({ summary: '', pages: {}, recent: [], offered: {}, lastChecked: null, reason: 'Waiting for a page observation.' });
 export class Ambient {
@@ -69,7 +69,7 @@ export class Ambient {
     if (!this.enabled || typeof context.text !== 'string' || (context.ambientEpoch !== undefined && context.ambientEpoch !== this.epoch)) return;
     try { assertTarget(this.workspace, this.workspace!.id, { id: context.tabId, url: context.url, title: context.title }); } catch { return; }
     const text = context.text.trim().slice(0,12000);
-    const hash = createHash('sha256').update(text).digest('hex');
+    const hash = createHash('sha256').update(text).update(context.image ?? '').digest('hex');
     const pageKey = createHash('sha256').update(context.url).digest('hex');
     const previous = this.memory.pages[pageKey];
     const visitId = context.visitId ?? context.version;
@@ -80,9 +80,12 @@ export class Ambient {
     const count = (previous?.count ?? 0) + (newVisit ? 1 : 0);
     const event: AmbientEvent = { tabId: context.tabId, url: context.url, title: context.title, visitId, hash,
       kind: context.kind, text, previousText: previous && Date.now() - previous.lastSeen < 86400000 ? previous.text : null,
+      image: context.image, previousImage: previous && Date.now() - previous.lastSeen < 86400000 ? previous.image : undefined,
       visitCount: count, newVisit, at: context.observedAt };
-    this.memory.pages[pageKey] = { url: context.url, title: context.title, count, lastSeen: Date.now(), visitId, text, hash };
+    this.memory.pages[pageKey] = { url: context.url, title: context.title, count, lastSeen: Date.now(), visitId, text, hash, image: context.image };
     this.memory.pages = Object.fromEntries(Object.entries(this.memory.pages).sort((a,b) => b[1].lastSeen-a[1].lastSeen).slice(0,100));
+    // Keep at most four visual baselines per workspace; images never enter UI state.
+    Object.values(this.memory.pages).filter(p => p.image).slice(4).forEach(p => { delete p.image; });
     this.memory.offered = Object.fromEntries(Object.entries(this.memory.offered).filter(([,at]) => Date.now()-at < 86400000).slice(-100));
     this.memory.responded = Object.fromEntries(Object.entries(this.memory.responded ?? {}).filter(([,at]) => Date.now()-at < 86400000).slice(-100));
     this.latest.set(context.tabId, event);
@@ -94,6 +97,7 @@ export class Ambient {
     if (queued?.url === event.url && queued.visitId === event.visitId) {
       event.newVisit ||= queued.newVisit;
       event.previousText = queued.previousText;
+      event.previousImage = queued.previousImage;
     }
     this.pending.set(context.tabId, event); this.persist(); this.schedule(); this.changed();
   }

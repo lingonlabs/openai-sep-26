@@ -9,6 +9,7 @@ export default defineBackground(() => {
   const attached = new Set<number>();
   const injecting = new Set<number>();
   let commandQueue = Promise.resolve();
+  const lastVisualCapture = new Map<number, number>();
   let browserRestarted = false;
   // storage.session also clears on an unpacked extension reload. Use the actual
   // browser-start event to invalidate tab IDs; preserve selections on code reload.
@@ -89,6 +90,7 @@ export default defineBackground(() => {
       if (message.type === 'state') {
         const justConnected = state.connection !== 'connected';
         const justFinished = !!state.server.runningTaskId && !message.state.runningTaskId;
+        if (justFinished || justConnected) lastVisualCapture.clear();
         if (message.state.runningTaskId && message.state.runningTaskId !== state.server.runningTaskId) cancelled.delete(message.state.runningTaskId);
         state.connection = 'connected'; state.error = null; state.server = message.state; void broadcast(justConnected || justFinished, justFinished);
       }
@@ -110,6 +112,28 @@ export default defineBackground(() => {
   async function debug(tabId: number, method: string, params: Record<string, unknown>) {
     if (!attached.has(tabId)) { await chrome.debugger.attach({ tabId }, '1.3'); attached.add(tabId); }
     return await chrome.debugger.sendCommand({ tabId }, method, params) as Record<string, unknown>;
+  }
+  async function captureAmbientSheet(tabId: number, url: string, workspaceId: string, epoch: number) {
+    const allowed = () => {
+      const workspace = state.workspaces.find(w => w.id === workspaceId);
+      const prefs = state.server.ambient?.preferences;
+      return state.connection === 'connected' && !state.server.runningTaskId && state.server.ambient?.epoch === epoch &&
+        state.activeWorkspaceId === workspaceId && !workspace?.paused && prefs?.enabled && prefs.instructions.some(i => i.enabled) && workspace;
+    };
+    const check = async () => {
+      const workspace = allowed(); if (!workspace) throw new Error('Visual monitoring suspended.');
+      const tab = await chrome.tabs.get(tabId);
+      assertTarget(workspace, state.activeWorkspaceId, { id: tabId, url: tab.url ?? '', title: tab.title ?? '' });
+      if (tab.url !== url) throw new Error('Sheet changed during visual capture.');
+    };
+    await check();
+    try {
+      const shot = await debug(tabId, 'Page.captureScreenshot', { format: 'jpeg', quality: 75 });
+      await check();
+      const image = `data:image/jpeg;base64,${shot.data}`;
+      if (typeof shot.data !== 'string' || image.length > 2 * 1024 * 1024) throw new Error('Sheet screenshot is unavailable or too large.');
+      return image;
+    } finally { await chrome.debugger.detach({ tabId }).catch(() => {}); attached.delete(tabId); }
   }
   async function execute(command: BrowserCommand) {
     if (handled.has(command.id)) { send({ type: 'result', id: command.id, ok: false, error: 'Duplicate command rejected; inspect the page before retrying.' }); return; }
@@ -168,7 +192,21 @@ export default defineBackground(() => {
       if (message.type === 'page:ready') { await broadcast(true); return { ok: true }; }
       if (message.type === 'page:context' && sender.tab?.id) {
         if (state.connection !== 'connected' || state.server.runningTaskId) return { ok: true };
-        send({ type: 'context', context: { ...message.context, visitId: `${sender.documentId ?? sender.tab.id}|${message.context.visitId}`, tabId: sender.tab.id, url: sender.url ?? message.context.url } }); return { ok: true };
+        const tabId = sender.tab.id, url = sender.url ?? message.context.url;
+        let image: string | undefined;
+        if (new URL(url).hostname === 'docs.google.com' && new URL(url).pathname.startsWith('/spreadsheets/')) {
+          if (Date.now() - (lastVisualCapture.get(tabId) ?? 0) < 20000) return { ok: true };
+          lastVisualCapture.set(tabId, Date.now());
+          const workspaceId = state.activeWorkspaceId, epoch = state.server.ambient?.epoch;
+          if (!workspaceId || epoch === undefined) return { ok: true };
+          // Share the execution queue: background observation cannot overlap a browser command.
+          const capture = commandQueue.then(() => captureAmbientSheet(tabId, url, workspaceId, epoch));
+          commandQueue = capture.then(() => {}, () => {});
+          try { image = await capture; }
+          catch (error) { if (!state.server.runningTaskId) { state.error = `Sheet visual check: ${String(error)}`; void broadcast(); } return { ok: false }; }
+        }
+        if (state.server.runningTaskId) return { ok: true };
+        send({ type: 'context', context: { ...message.context, image, visitId: `${sender.documentId ?? sender.tab.id}|${message.context.visitId}`, tabId, url } }); return { ok: true };
       }
       if (message.type === 'ui:get' && fromPanel) { await refreshTabs(); return state; }
       if (message.type === 'ui:pair' && fromPanel) {

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Ambient } from '../apps/server/src/ambient.js';
 import { Store } from '../apps/server/src/store.js';
 import { defaultAmbientPreferences, type PageContext, type Suggestion } from '../packages/shared/src/index.js';
-import type { AmbientDecision, AmbientDriver, AmbientRequest } from '../apps/server/src/ambient-agent.js';
+import { ambientInput, type AmbientDecision, type AmbientDriver, type AmbientRequest } from '../apps/server/src/ambient-agent.js';
 
 const workspace = { id: 'finance', name: 'Finance', paused: false, tabs: [{ id: 1, title: 'Invoices', scope: 'https://mail.google.com/mail/u/0/', paused: false }] };
 const page = (text = 'Invoice A', visitId = 'doc|initial'): PageContext => ({ tabId: 1, url: 'https://mail.google.com/mail/u/0/#invoice-a', title: 'Invoice A', version: 'v', kind: 'page', vendor: '', text, visitId, observedAt: Date.now() });
@@ -15,6 +15,42 @@ function setup(driver: AmbientDriver) {
   ambient.update(workspace, true, false);
   return { store, ambient, offers, close: () => { ambient.cancel(); store.close(); } };
 }
+
+test('visual-only changes reach the evaluator with persisted before/after images and no extra visit', async () => {
+  const requests: AmbientRequest[] = [];
+  const { ambient, store, close } = setup(async r => { requests.push(r); return quiet(); });
+  const before = 'data:image/jpeg;base64,YmVmb3Jl', after = 'data:image/jpeg;base64,YWZ0ZXI=';
+  ambient.observe({ ...page('Canvas toolbar only'), image: before }); await ambient.evaluate();
+  assert.equal(requests[0].events[0].previousImage, undefined);
+  ambient.observe({ ...page('Canvas toolbar only'), image: before }); await ambient.evaluate();
+  assert.equal(requests.length, 1);
+  ambient.cancel();
+  const restored = new Ambient(store, async r => { requests.push(r); return quiet(); }, 'test', true, () => {}, () => {});
+  restored.update(workspace, true, false);
+  restored.observe({ ...page('Canvas toolbar only'), image: after }); await restored.evaluate();
+  const event = requests[1].events[0];
+  assert.equal(event.previousImage, before); assert.equal(event.image, after); assert.equal(event.visitCount, 1);
+  const content = ambientInput(requests[1])[0].content;
+  assert.deepEqual(content.filter(c => c.type === 'input_image').map(c => c.image), [before, after]);
+  assert.ok(!JSON.stringify(content.filter(c => c.type === 'input_text')).includes('base64'));
+  assert.ok(!JSON.stringify(restored.status).includes('base64'));
+  restored.cancel(); close();
+});
+
+test('visual coalescing retains the original baseline and execution changes are never evaluated', async () => {
+  const requests: AmbientRequest[] = [];
+  const { ambient, close } = setup(async r => { requests.push(r); return quiet(); });
+  const frame = (image: string) => ({ ...page('Same DOM'), image });
+  ambient.observe(frame('before')); await ambient.evaluate();
+  ambient.observe(frame('typing')); ambient.observe(frame('finished')); await ambient.evaluate();
+  assert.equal(requests[1].events[0].previousImage, 'before'); assert.equal(requests[1].events[0].image, 'finished');
+  ambient.update(workspace, true, true); ambient.observe(frame('agent')); await ambient.evaluate();
+  assert.equal(requests.length, 2);
+  ambient.update(workspace, true, false); ambient.observe(frame('agent done')); await ambient.evaluate();
+  assert.equal(requests.length, 2);
+  ambient.observe(frame('user edit')); await ambient.evaluate();
+  assert.equal(requests[2].events[0].previousImage, 'agent done'); close();
+});
 
 test('ambient memory persists visits and summaries; DOM changes and extension reloads are not extra visits', async () => {
   const seen: AmbientRequest[] = [];

@@ -20,6 +20,7 @@ export default defineContentScript({
     let ambientEnabled = false, ambientEpoch = 0, baselineNeeded = false, visitId = 'initial';
     let lastObservedUrl = location.href, lastKind = '', popupError = '';
     let monitoring = false, poll: ReturnType<typeof setInterval> | undefined;
+    let lastVisualPoll = 0;
     const host = document.createElement('div'); host.id = 'ambient-close-presence';
     const shadow = host.attachShadow({ mode: 'closed' });
     const version = () => `${documentId}:${revision}:${location.href}`;
@@ -105,7 +106,9 @@ export default defineContentScript({
       const text = [heading, vendor ? `Selected vendor: ${vendor}` : '', document.body.innerText].filter(Boolean).join('\n').slice(0, 16000);
       const context = { tabId: 0, url: location.href, title: document.title, version: version(), visitId, kind, vendor, text, baseline: baselineNeeded, ambientEpoch, observedAt: Date.now() };
       const fingerprint = JSON.stringify([location.href, visitId, kind, vendor, text]);
-      if (fingerprint === lastContext) return; lastContext = fingerprint;
+      const visualDue = location.hostname === 'docs.google.com' && location.pathname.startsWith('/spreadsheets/') && Date.now() - lastVisualPoll >= 20000;
+      if (fingerprint === lastContext && !visualDue) return; lastContext = fingerprint;
+      if (visualDue) lastVisualPoll = Date.now();
       baselineNeeded = false; await send({ type: 'page:context', context }).catch(() => { active = false; host.remove(); });
     }
     let debounce: ReturnType<typeof setTimeout>;

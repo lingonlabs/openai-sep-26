@@ -5,7 +5,7 @@ Verified on 2026-09-10 with Node 25.6.1 and pnpm 10.30.2.
 | Check | Result |
 | --- | --- |
 | Dependency publication dates | All 699 locked registry versions passed the 14-day minimum-age check, including Markdown, transitive and optional packages. |
-| Automated tests | 40 tests passed, including progress-aware recovery, handoff confirmation, queued updates, Stop during review, per-message findings, control freshness, return visits, popup choices, Markdown, and unsafe-content handling. |
+| Automated tests | 42 tests passed, including visual-only changes and persisted image baselines, progress-aware recovery, handoff confirmation, queued updates, Stop during review, per-message findings, control freshness, return visits, popup choices, Markdown, and unsafe-content handling. |
 | Type checking | Shared contracts, server, and extension passed. |
 | Production build | WXT Chrome MV3 build passed. |
 | Live Astra connection | Successful API response using the configured model. |
@@ -160,3 +160,23 @@ acknowledgment, and a paused task exposed its next step and continuation control
 These checks did not interact with real accounts. The real PDF and NetSuite
 workflow still needs user-driven continuation after extension reload. No dependencies
 changed.
+
+## Sheet vision and ambient screenshot polling (2026-09-10)
+
+A real read-only task performed exactly one inspect and one screenshot through the
+paired extension's selected onboarding Sheet. Astra read all four column headers,
+three populated vendor rows, and the selected cell from the screenshot. DOM text
+contained the toolbar/document chrome but no grid headers or vendor cells. The
+task completed without edits, scrolling, navigation, or accessing other tabs.
+
+Added periodic visual capture for selected Sheets, independent of DOM mutations,
+with persisted before/after baselines and multimodal ambient input. All 42 tests,
+type checks, and production build pass. Tests establish that changed pixels with
+unchanged text reach inference, identical images are skipped, baseline images
+survive restart, coalescing retains the original image, and task changes are
+baselined rather than evaluated. No packages or styling files changed.
+
+The backend was restarted while idle. Live automatic capture and a user-added row
+still need verification after extension reload. Use `node scripts/local-control.mjs
+visual-status` to inspect baseline presence and the current decision without printing
+screenshots. `test-sheet-vision` repeats the read-only capture test.

@@ -11,6 +11,7 @@ export const ContextSchema = z.object({
   tabId: z.number().int(), url: z.string(), title: z.string(), version: z.string(),
   kind: z.enum(['bill_form', 'page']), vendor: z.string().max(300), observedAt: z.number(), visitId: z.string().optional(),
   text: z.string().max(16000).optional(), baseline: z.boolean().optional(), ambientEpoch: z.number().optional(),
+  image: z.string().startsWith('data:image/jpeg;base64,').max(2 * 1024 * 1024).optional(),
 });
 export type PageContext = z.infer<typeof ContextSchema>;
 export const ActionSchema = z.object({

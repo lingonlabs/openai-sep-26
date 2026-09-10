@@ -34,6 +34,22 @@ visible vendor field. Input/DOM changes settle for 1.2 seconds; a 5-second poll
 also catches changes without useful mutation events. Identical snapshots are not
 resent. The current bill-form rule is a context hint, not the suggestion policy.
 
+Selected Google Sheets also request a screenshot about every 20 seconds independently
+of DOM changes. The background captures through the extension's debugger mechanism,
+with workspace/scope/epoch checks before and after capture, sharing the browser
+command queue. No tab activation or connector is needed. Chrome may display its
+debugging banner during captures. Only Sheets gets this visual polling path.
+
+JPEG images are bounded to 2 MiB. The backend hashes image plus text, skips identical
+observations, and supplies labelled previous/current images as multimodal input to
+Astra. Up to four latest visual baselines persist per workspace in ignored local
+SQLite; screenshots do not enter UI state. A first screenshot establishes a baseline.
+The prompt requires a visible empty row becoming populated in a comparable viewport
+before calling a vendor newly added; scrolling, selections, sorting and overlays are
+not row-addition evidence. This is viewport monitoring, not a complete-sheet change
+feed. Tab throttling or model latency can delay offers. Pause and active execution
+disable capture; the first post-task image is baselined like text observations.
+
 The backend coalesces changed observations and starts at most one ambient
 evaluation per 15 seconds. Up to four changed tabs are evaluated in a batch;
 remaining tabs stay queued. Each tab has at most one pending observation. The

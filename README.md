@@ -71,6 +71,9 @@ workspace does not control browser tabs and its investigation button is disabled
   memory, visit counts, recent decisions, and task outcomes in SQLite.
 - Bounded page-text observations are debounced and evaluated by Astra. The existing
   bill-form rule provides a hint; it no longer directly triggers suggestions.
+- Selected Google Sheets also receive visual checks about every 20 seconds, even
+  when canvas updates leave DOM text unchanged. Astra compares before/after images;
+  the first image is a baseline. Visual checks pause throughout task execution.
 - Offers have 2–3 choices plus free text. Dismiss choices do not start browser tasks.
   Duplicate opportunities have a cooldown and response history.
 - Node/Fastify WebSocket bridge with token pairing and an extension-origin check.
