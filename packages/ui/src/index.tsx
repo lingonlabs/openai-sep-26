@@ -104,11 +104,13 @@ export function CopilotPanel({
   request,
   connected,
   onDisconnect,
+  preferredBridgeId,
 }: {
   state: AppState | null;
   request: Request;
   connected: boolean;
   onDisconnect?: () => void;
+  preferredBridgeId?: string;
 }) {
   const [workspaceId, setWorkspaceId] = useState("");
   const [creating, setCreating] = useState(false);
@@ -120,7 +122,13 @@ export function CopilotPanel({
   const [view, setView] = useState<"findings" | "conversation">("findings");
   const w = workspaceId
     ? state?.workspaces.find((w) => w.id === workspaceId)
-    : state?.workspaces.at(-1);
+    : state?.workspaces.find((w) =>
+        state.bridges.some(
+          (b) =>
+            b.activeWorkspaceId === w.id &&
+            (!preferredBridgeId || b.id === preferredBridgeId),
+        ),
+      );
   const bridge = state?.bridges.find((b) => b.id === w?.bridgeId);
   useEffect(() => {
     if (w && !workspaceId) setWorkspaceId(w.id);

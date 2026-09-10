@@ -42,6 +42,12 @@ function initialToken() {
   return token || localStorage.getItem("close.pairing") || "";
 }
 function Workbench() {
+  const [browserId] = useState(() => {
+    const id =
+      sessionStorage.getItem("close.demo-browser") || crypto.randomUUID();
+    sessionStorage.setItem("close.demo-browser", id);
+    return id;
+  });
   const [token, setToken] = useState(initialToken);
   const [connected, setConnected] = useState(false);
   const [state, setState] = useState<AppState | null>(null);
@@ -98,11 +104,6 @@ function Workbench() {
   };
   useEffect(() => {
     if (!token) return;
-    let browserId = sessionStorage.getItem("close.demo-browser");
-    if (!browserId) {
-      browserId = crypto.randomUUID();
-      sessionStorage.setItem("close.demo-browser", browserId);
-    }
     const bridge = new BridgeClient(
       location.origin.replace("http", "ws") + "/bridge",
       {
@@ -315,6 +316,7 @@ function Workbench() {
         <aside className="assistant-stage">
           {token ? (
             <CopilotPanel
+              preferredBridgeId={browserId}
               state={state}
               connected={connected}
               request={request}
