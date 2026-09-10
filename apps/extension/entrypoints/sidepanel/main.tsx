@@ -9,19 +9,37 @@ style.textContent = "html,body,#root{height:100%;margin:0;min-width:320px}";
 document.head.append(style);
 function Panel() {
   const [token, setToken] = useState("");
+  const [browserId, setBrowserId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [connected, setConnected] = useState(false);
   const [state, setState] = useState<AppState | null>(null);
   const [error, setError] = useState("");
   const client = useRef<BridgeClient | null>(null);
   useEffect(() => {
-    void chrome.storage.local.get(["closeToken"]).then((data) => {
+    const readConnection = async () => {
+      const data = await chrome.storage.local.get([
+        "closeToken",
+        "closeBrowserId",
+      ]);
       setToken(typeof data.closeToken === "string" ? data.closeToken : "");
+      setBrowserId(
+        typeof data.closeBrowserId === "string" ? data.closeBrowserId : null,
+      );
       setReady(true);
-    });
+    };
+    void readConnection();
+    const changed = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      area: string,
+    ) => {
+      if (area === "local" && (changes.closeToken || changes.closeBrowserId))
+        void readConnection();
+    };
+    chrome.storage.onChanged.addListener(changed);
+    return () => chrome.storage.onChanged.removeListener(changed);
   }, []);
   useEffect(() => {
-    if (!token) return;
+    if (!token || !browserId) return;
     const bridge = new BridgeClient("ws://127.0.0.1:4318/bridge", {
       type: "hello",
       protocolVersion: 1,
@@ -39,7 +57,7 @@ function Panel() {
     };
     bridge.connect();
     return () => bridge.close();
-  }, [token]);
+  }, [token, browserId]);
   const pair = async (value: string) => {
     await chrome.storage.local.set({ closeToken: value });
     await chrome.runtime.sendMessage({ type: "close.connect" });
@@ -51,13 +69,14 @@ function Panel() {
     setToken("");
     setState(null);
   };
-  if (!ready) return null;
+  if (!ready || (token && !browserId)) return null;
   return token ? (
     <CopilotPanel
       state={state}
       connected={connected}
       request={(a, p) => client.current!.request(a, p)}
       onDisconnect={() => void disconnect()}
+      preferredBridgeId={browserId!}
     />
   ) : (
     <PairingView onConnect={(value) => void pair(value)} error={error} />

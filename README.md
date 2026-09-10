@@ -47,6 +47,8 @@ The **Demo guide** button provides the walkthrough inside the application. A liv
 4. Open Close Copilot from Chrome's toolbar. Pair using `.local/relay-token`.
 5. Create a named workspace and select only the intended tabs. A draggable icon appears on watched pages. Use it to open the side panel.
 
+The extension’s workspace picker shows only tabs and workspaces belonging to that Chrome profile. The local workbench keeps its synthetic workspace separate.
+
 Pause individual tabs, pause the workspace, remove a tab, or stop the current task from the panel. Switching workspaces stops the previous controlling task. Reconnects restore observation, never replay actions. Reload the extension and watched pages after rebuilding it.
 
 ## Architecture

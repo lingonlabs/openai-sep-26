@@ -100,7 +100,7 @@ export function PairingView({
   );
 }
 export function CopilotPanel({
-  state,
+  state: allBrowserState,
   request,
   connected,
   onDisconnect,
@@ -112,6 +112,20 @@ export function CopilotPanel({
   onDisconnect?: () => void;
   preferredBridgeId?: string;
 }) {
+  // A panel belongs to one browser. Do not let a different profile or the
+  // synthetic workbench become its default workspace or its tab picker.
+  const state =
+    allBrowserState && preferredBridgeId
+      ? {
+          ...allBrowserState,
+          bridges: allBrowserState.bridges.filter(
+            (b) => b.id === preferredBridgeId,
+          ),
+          workspaces: allBrowserState.workspaces.filter(
+            (w) => w.bridgeId === preferredBridgeId,
+          ),
+        }
+      : allBrowserState;
   const [workspaceId, setWorkspaceId] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");

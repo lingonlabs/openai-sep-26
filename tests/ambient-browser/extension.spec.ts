@@ -2,7 +2,16 @@ import { test, expect, chromium } from "@playwright/test";
 import { resolve } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-test("packaged Chrome extension observes selected tabs and prepares without saving", async () => {
+test("extension stays in its own Chrome profile when a synthetic workspace is active", async () => {
+  const demoBrowser = await chromium.launch();
+  const demo = await demoBrowser.newPage();
+  await demo.goto(
+    "http://127.0.0.1:4318/#pair=" + "test-pairing-token-".repeat(4),
+  );
+  await demo.getByRole("button", { name: "Start watching" }).click();
+  await expect(
+    demo.getByText("Watching selected tabs", { exact: true }),
+  ).toBeVisible();
   const profile = await mkdtemp(resolve(tmpdir(), "close-extension-"));
   const extension = resolve("apps/extension/.output/chrome-mv3");
   const context = await chromium.launchPersistentContext(profile, {
@@ -34,6 +43,17 @@ test("packaged Chrome extension observes selected tabs and prepares without savi
       .getByRole("button", { name: "Connect local assistant" })
       .click();
     await expect(panel.locator(".model-dot i")).not.toHaveClass("offline");
+    await expect(
+      panel
+        .getByRole("combobox", { name: "Browser", exact: true })
+        .locator("option"),
+    ).toHaveCount(1);
+    await expect(
+      panel.getByRole("combobox", { name: "Browser", exact: true }),
+    ).not.toContainText("Interactive demo workspace");
+    await expect(
+      panel.getByRole("button", { name: "New workspace", exact: true }),
+    ).toHaveCount(0);
     if (
       await panel
         .getByRole("button", { name: "New workspace", exact: true })
@@ -45,7 +65,21 @@ test("packaged Chrome extension observes selected tabs and prepares without savi
     await expect(
       panel.getByText("Invoice inbox · Demo Gmail", { exact: true }),
     ).toBeVisible();
+    await panel
+      .getByRole("textbox", { name: "Workspace name" })
+      .fill("Chrome-only close");
     await panel.getByRole("button", { name: "Start watching" }).click();
+    await expect(
+      panel
+        .getByRole("combobox", { name: "Current workspace" })
+        .locator("option"),
+    ).toHaveText(["Chrome-only close"]);
+    await panel.reload();
+    await expect(
+      panel
+        .getByRole("combobox", { name: "Current workspace" })
+        .locator("option"),
+    ).toHaveText(["Chrome-only close"]);
     await expect(
       netsuite.getByRole("button", { name: /Open Close Copilot/ }),
     ).toBeVisible();
@@ -55,11 +89,9 @@ test("packaged Chrome extension observes selected tabs and prepares without savi
     await expect(panel.locator(".finding-card")).toHaveCount(3, {
       timeout: 45000,
     });
-    const candidate = panel
-      .locator(".finding-card")
-      .filter({
-        has: panel.getByRole("heading", { name: "Marlow Design", exact: true }),
-      });
+    const candidate = panel.locator(".finding-card").filter({
+      has: panel.getByRole("heading", { name: "Marlow Design", exact: true }),
+    });
     await candidate
       .getByRole("button", { name: "Prepare bill for review" })
       .click();
@@ -81,6 +113,7 @@ test("packaged Chrome extension observes selected tabs and prepares without savi
     ).toHaveCount(0);
   } finally {
     await context.close();
+    await demoBrowser.close();
     await rm(profile, { recursive: true, force: true });
   }
 });
