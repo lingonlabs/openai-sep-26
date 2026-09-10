@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -27,17 +27,13 @@ import {
 } from "lucide-react";
 import {
   moneyLabel,
-  taskProgress,
   type AppState,
   type Evidence,
   type Finding,
   type Workspace,
 } from "@close/shared";
 import { Button, cn } from "./button";
-import { Markdown } from "./markdown";
 import { VendorSetupPanel } from "./vendor-setup";
-import { HelpPanel } from "./help-panel";
-import { ActionCard } from "./action-card";
 export { Button } from "./button";
 export type Request = (action: string, payload?: unknown) => Promise<any>;
 export const AppIcon = ({ app, ...props }: { app: string; size?: number }) =>
@@ -133,10 +129,6 @@ export function CopilotPanel({
       : allBrowserState;
   const [workspaceId, setWorkspaceId] = useState("");
   const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [parentTaskId, setParentTaskId] = useState<string | undefined>();
-  const [clock, setClock] = useState(Date.now());
   const [error, setError] = useState("");
   const [evidence, setEvidence] = useState<Evidence | null>(null);
   const [chat, setChat] = useState("");
@@ -174,18 +166,7 @@ export function CopilotPanel({
     ) ?? [];
   const tasks = state?.tasks.filter((t) => t.workspaceId === w?.id) ?? [];
   const active = tasks.find((t) => t.id === w?.activeTaskId);
-  const last = [...tasks]
-    .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
-    .at(-1);
-  useEffect(() => {
-    if (!active) return;
-    setDetails(true);
-    const timer = setInterval(() => setClock(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [active?.id]);
-  useEffect(() => {
-    setParentTaskId(undefined);
-  }, [w?.id]);
+  const last = tasks.at(-1);
   const activities =
     state?.activities.filter((a) => a.workspaceId === w?.id) ?? [];
   const pending = suggestions.at(-1);
@@ -220,28 +201,18 @@ export function CopilotPanel({
             </button>
           </div>
         )}
-        {(!w || creating || editing) && (
+        {(!w || creating) && (
           <WorkspaceBuilder
-            key={editing ? w?.id : "new"}
-            workspace={editing ? w : undefined}
             state={state}
             request={request}
             onCreated={(id) => {
               setWorkspaceId(id);
               setCreating(false);
-              setEditing(false);
             }}
-            onCancel={
-              w
-                ? () => {
-                    setCreating(false);
-                    setEditing(false);
-                  }
-                : undefined
-            }
+            onCancel={w ? () => setCreating(false) : undefined}
           />
         )}
-        {w && !creating && !editing && (
+        {w && !creating && (
           <>
             <div className="workspace-bar">
               <div>
@@ -370,57 +341,38 @@ export function CopilotPanel({
                 </Button>
               )}
             </div>
-            {pending &&
-              !active &&
-              !w.paused &&
-              (pending.options?.length ? (
-                <ActionCard
-                  key={pending.id}
-                  suggestion={pending}
-                  disabled={!!disabled}
-                  onChoose={(option, message) => {
-                    setView("conversation");
-                    void act("suggestion.accept", {
-                      suggestionId: pending.id,
-                      ...(option >= 0 ? { option } : { message }),
-                    });
-                  }}
-                  onDismiss={() =>
-                    void act("suggestion.dismiss", { suggestionId: pending.id })
-                  }
-                />
-              ) : (
-                <section className="suggestion-card">
-                  <div className="card-eyebrow">
-                    <Sparkles size={14} />A HELPFUL NEXT STEP
-                  </div>
-                  <h2>{pending.title}</h2>
-                  <p>{pending.description}</p>
-                  <div className="button-row">
-                    <Button
-                      disabled={disabled}
-                      onClick={() =>
-                        void act("suggestion.accept", {
-                          suggestionId: pending.id,
-                        })
-                      }
-                    >
-                      Check invoices
-                      <ArrowRight size={15} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() =>
-                        void act("suggestion.dismiss", {
-                          suggestionId: pending.id,
-                        })
-                      }
-                    >
-                      Not now
-                    </Button>
-                  </div>
-                </section>
-              ))}
+            {pending && !active && !w.paused && (
+              <section className="suggestion-card">
+                <div className="card-eyebrow">
+                  <Sparkles size={14} />A HELPFUL NEXT STEP
+                </div>
+                <h2>{pending.title}</h2>
+                <p>{pending.description}</p>
+                <div className="button-row">
+                  <Button
+                    disabled={disabled}
+                    onClick={() =>
+                      void act("suggestion.accept", {
+                        suggestionId: pending.id,
+                      })
+                    }
+                  >
+                    Check invoices
+                    <ArrowRight size={15} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      void act("suggestion.dismiss", {
+                        suggestionId: pending.id,
+                      })
+                    }
+                  >
+                    Not now
+                  </Button>
+                </div>
+              </section>
+            )}
             {active && (
               <section className="working-card">
                 <div className="working-title">
@@ -445,49 +397,14 @@ export function CopilotPanel({
                     Stop
                   </Button>
                 </div>
-                <p role="status">{taskProgress(active, activities)}</p>
+                <p>{activities.at(-1)?.message ?? active.title}</p>
                 <div className="progress-track">
                   <span />
                 </div>
                 <div className="micro">
-                  {active.actionCount} browser actions ·{" "}
-                  {Math.max(
-                    0,
-                    Math.floor((clock - Date.parse(active.startedAt)) / 1000),
-                  )}
-                  s elapsed · Only selected tabs
+                  {active.actionCount} browser actions · Only selected tabs
                 </div>
               </section>
-            )}
-            <Button
-              variant="ghost"
-              onClick={() => setEditing(true)}
-              disabled={!!active}
-            >
-              Edit workspace
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setHelpOpen(!helpOpen)}
-            >
-              Help me with…
-            </Button>
-            {helpOpen && (
-              <HelpPanel
-                key={w.id}
-                ambient={state?.ambient?.find((a) => a.workspaceId === w.id)}
-                disabled={!connected || !isActive || !!active}
-                onSave={(preferences) =>
-                  void act("ambient.settings", {
-                    workspaceId: w.id,
-                    preferences,
-                  })
-                }
-                onForget={() =>
-                  void act("ambient.forget", { workspaceId: w.id })
-                }
-              />
             )}
             <Button
               variant="ghost"
@@ -688,11 +605,7 @@ export function CopilotPanel({
                       <div className="eyebrow">
                         {m.role === "user" ? "YOU" : "CLOSE COPILOT"}
                       </div>
-                      {m.role === "assistant" ? (
-                        <Markdown text={m.text} />
-                      ) : (
-                        <p>{m.text}</p>
-                      )}
+                      <p>{m.text}</p>
                     </div>
                   ))}
               </div>
@@ -754,95 +667,22 @@ export function CopilotPanel({
                   Activity & task history <span>{tasks.length} tasks</span>
                 </button>
                 {details && (
-                  <>
-                    <div className="task-history">
-                      {[...tasks]
-                        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
-                        .slice(0, 8)
-                        .map((t) => (
-                          <div key={t.id}>
-                            <strong>{t.title}</strong>
-                            <small>
-                              {t.status} · {t.actionCount} actions
-                            </small>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={!!active || !!disabled}
-                              onClick={() => {
-                                setParentTaskId(t.id);
-                                setView("conversation");
-                              }}
-                            >
-                              Continue task
-                            </Button>
-                          </div>
-                        ))}
-                    </div>
-                    <ol>
-                      {activities.slice(-25).map((a) => (
-                        <li key={a.id} className={a.level}>
-                          <time>
-                            {new Date(a.at).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            })}
-                          </time>
-                          <span>
-                            {a.status === "working" && (
-                              <LoaderCircle size={12} className="spin" />
-                            )}{" "}
-                            {a.message}
-                            {a.status && (
-                              <small>
-                                {" "}
-                                ·{" "}
-                                {a.status === "done"
-                                  ? "Done"
-                                  : a.status === "error"
-                                    ? "Failed"
-                                    : "In progress"}
-                              </small>
-                            )}
-                            {a.detail && (
-                              <p className="activity-detail">{a.detail}</p>
-                            )}
-                            {a.error && (
-                              <p className="activity-error">{a.error}</p>
-                            )}
-                            {a.evidenceId && (
-                              <button
-                                className="text-button"
-                                onClick={async () => {
-                                  const source = await act("evidence.get", {
-                                    id: a.evidenceId,
-                                  });
-                                  if (source) setEvidence(source);
-                                }}
-                              >
-                                View source
-                              </button>
-                            )}
-                          </span>
-                        </li>
-                      ))}
-                    </ol>
-                  </>
+                  <ol>
+                    {activities.slice(-25).map((a) => (
+                      <li key={a.id} className={a.level}>
+                        <time>
+                          {new Date(a.at).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </time>
+                        <span>{a.message}</span>
+                      </li>
+                    ))}
+                  </ol>
                 )}
               </section>
-            )}
-            {parentTaskId && (
-              <div className="micro">
-                Following up on:{" "}
-                {tasks.find((t) => t.id === parentTaskId)?.title}{" "}
-                <button
-                  className="text-button"
-                  onClick={() => setParentTaskId(undefined)}
-                >
-                  Clear
-                </button>
-              </div>
             )}
             <form
               className="chat-form"
@@ -852,7 +692,6 @@ export function CopilotPanel({
                 const result = await act("chat.send", {
                   workspaceId: w.id,
                   message: chat,
-                  parentTaskId,
                 });
                 if (result) {
                   setChat("");
@@ -923,13 +762,6 @@ export function CopilotPanel({
               Captured during this task. The live page may have changed.
             </p>
             <pre>{evidence.text}</pre>
-            {evidence.screenshot && (
-              <img
-                className="source-image"
-                src={evidence.screenshot}
-                alt="Captured source viewport"
-              />
-            )}
             <div className="micro">
               Snapshot {evidence.id.slice(0, 16)} · SHA-256{" "}
               {evidence.hash.slice(0, 16)}…
@@ -1063,20 +895,17 @@ function WorkspaceBuilder({
   request,
   onCreated,
   onCancel,
-  workspace,
 }: {
-  workspace?: Workspace;
   state: AppState | null;
   request: Request;
   onCreated: (id: string) => void;
   onCancel?: () => void;
 }) {
-  const [name, setName] = useState(workspace?.name ?? "August close");
-  const [bridgeId, setBridgeId] = useState(workspace?.bridgeId ?? "");
-  const [selected, setSelected] = useState<string[]>(workspace?.tabIds ?? []);
-  const selectionTouched = useRef(!!workspace);
-  const [from, setFrom] = useState(workspace?.searchFrom ?? "2026-08-01");
-  const [to, setTo] = useState(workspace?.searchTo ?? "2026-09-10");
+  const [name, setName] = useState("August close");
+  const [bridgeId, setBridgeId] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [from, setFrom] = useState("2026-08-01");
+  const [to, setTo] = useState("2026-09-10");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const bridge =
@@ -1084,13 +913,9 @@ function WorkspaceBuilder({
   useEffect(() => {
     if (bridge) {
       setBridgeId(bridge.id);
-      setSelected((old) =>
-        selectionTouched.current
-          ? old.filter((id) => bridge.tabs.some((t) => t.id === id))
-          : bridge.tabs.filter((t) => t.connected).map((t) => t.id),
-      );
+      setSelected(bridge.tabs.filter((t) => t.connected).map((t) => t.id));
     }
-  }, [bridge?.id, bridge?.tabs.map((t) => `${t.id}:${t.connected}`).join(",")]);
+  }, [bridge?.id, bridge?.tabs.map((t) => t.id).join(",")]);
   return (
     <section className="workspace-builder">
       <div className="eyebrow">START WITH YOUR CONTEXT</div>
@@ -1105,17 +930,13 @@ function WorkspaceBuilder({
           setBusy(true);
           setError("");
           try {
-            const w = await request(
-              workspace ? "workspace.update" : "workspace.create",
-              {
-                workspaceId: workspace?.id,
-                name,
-                bridgeId: bridge?.id,
-                tabIds: selected,
-                searchFrom: from,
-                searchTo: to,
-              },
-            );
+            const w = await request("workspace.create", {
+              name,
+              bridgeId: bridge?.id,
+              tabIds: selected,
+              searchFrom: from,
+              searchTo: to,
+            });
             onCreated(w.id);
           } catch (e) {
             setError(
@@ -1138,7 +959,6 @@ function WorkspaceBuilder({
         <label>
           Browser
           <select
-            disabled={!!workspace}
             value={bridge?.id ?? ""}
             onChange={(e) => setBridgeId(e.target.value)}
           >
@@ -1160,14 +980,13 @@ function WorkspaceBuilder({
               <input
                 type="checkbox"
                 checked={selected.includes(t.id)}
-                onChange={(e) => {
-                  selectionTouched.current = true;
+                onChange={(e) =>
                   setSelected(
                     e.target.checked
                       ? [...selected, t.id]
                       : selected.filter((id) => id !== t.id),
-                  );
-                }}
+                  )
+                }
               />
               <AppIcon app={t.app} size={18} />
               <span>
@@ -1209,13 +1028,13 @@ function WorkspaceBuilder({
           </div>
         )}
         <div className="button-row">
-          <Button disabled={busy || !bridge || selected.length < 1}>
+          <Button disabled={busy || !bridge || selected.length < 2}>
             {busy ? (
               <LoaderCircle className="spin" size={15} />
             ) : (
               <Sparkles size={15} />
             )}
-            {workspace ? "Save workspace" : "Start watching"}
+            Start watching
           </Button>
           {onCancel && (
             <Button variant="ghost" type="button" onClick={onCancel}>

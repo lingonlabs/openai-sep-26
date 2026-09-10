@@ -1,35 +1,26 @@
 import {
   CommandSchema,
   type BrowserCommand,
-  type BrowserAction,
   type CommandResult,
   type Observation,
   type PageElement,
   type PageContext,
   type AppKind,
   normalize,
-  tabScope,
-  withinScope,
 } from "@close/shared";
 import { checkVendorList, vendorReview, verifyVendorIdentity } from "./vendor";
-import { isSearchField, targetFingerprint } from "./target";
 export { savedVendorUrl } from "./vendor";
 
 const dangerous =
   /\b(save|submit|post|delete|remove|trash|archive|send|compose|pay|purchase|approve|reject|void|sign out|log out)\b/i;
 const sensitive =
   /password|secret|token|credit.?card|routing.?number|bank.?account/i;
+const searchLabel = /search|find|filter/i;
 const selector =
-  'input:not([type="hidden"]):not([type="password"]),textarea,select,button,a[href],[role="button"],[role="link"],[role="option"],[role="tab"],[role="textbox"],[role="combobox"],[role="searchbox"],[contenteditable="true"]';
+  'input:not([type="hidden"]):not([type="password"]),textarea,select,button,a[href],[role="button"],[role="link"],[role="option"],[contenteditable="true"]';
 export class PageRuntime {
   readonly documentId = crypto.randomUUID();
   private version = 0;
-  private visitId = `${performance.timeOrigin}|initial`;
-  private visitKey = "";
-  private inspections = new Map<
-    number,
-    { url: string; fingerprints: Map<string, string> }
-  >();
   private signature = "";
   private seq = 0;
   private ids = new WeakMap<Element, string>();
@@ -55,6 +46,12 @@ export class PageRuntime {
       style.visibility !== "hidden" &&
       el.getClientRects().length > 0 &&
       !el.closest("[data-close-copilot-ui]")
+    );
+  }
+  private isSearchLabel(label: string) {
+    return (
+      searchLabel.test(label) ||
+      (this.app === "gmail" && /^ask gmail$/i.test(label))
     );
   }
   private label(el: HTMLElement) {
@@ -136,9 +133,7 @@ export class PageRuntime {
         : (el.textContent ?? "")
       : null;
     const role =
-      (isSearchField(el, label, this.app)
-        ? "searchbox"
-        : el.getAttribute("role")) ||
+      el.getAttribute("role") ||
       (tag === "a"
         ? "link"
         : tag === "button"
@@ -189,19 +184,7 @@ export class PageRuntime {
     const text = bodyText.replace(/\n{3,}/g, "\n\n").slice(0, 40000);
     const url = this.doc.location.href;
     const title = this.doc.title;
-    const fingerprints = new Map(
-      elements.map((e) => [
-        e.id,
-        targetFingerprint(this.elements.get(e.id)!, e),
-      ]),
-    );
-    const current = JSON.stringify({
-      url,
-      title,
-      text,
-      elements,
-      fingerprints: [...fingerprints],
-    });
+    const current = JSON.stringify({ url, title, text, elements });
     if (current !== this.signature) {
       this.signature = current;
       this.version++;
@@ -216,7 +199,6 @@ export class PageRuntime {
       this.app === "netsuite" && /\/vendor\.nl$/i.test(pageUrl.pathname);
     const billForm =
       this.app === "netsuite" &&
-      !pageUrl.searchParams.has("id") &&
       /bill/i.test(title + " " + text.slice(0, 1500)) &&
       elements.some((e) => /^(vendor|vendor name)/i.test(e.label)) &&
       elements.some((e) => /reference|invoice (number|#)/i.test(e.label));
@@ -231,7 +213,7 @@ export class PageRuntime {
           : billForm
             ? "bill_form"
             : this.app === "gmail"
-              ? elements.some((e) => e.role === "searchbox")
+              ? elements.some((e) => this.isSearchLabel(e.label))
                 ? "inbox"
                 : "message"
               : this.app === "sheets"
@@ -239,15 +221,6 @@ export class PageRuntime {
                 : /bills/i.test(title + " " + text.slice(0, 1500))
                   ? "bill_list"
                   : "other")) as PageContext["workflow"];
-    const visitKey = `${url}|${workflow}`;
-    if (visitKey !== this.visitKey) {
-      if (this.visitKey)
-        this.visitId = `${performance.timeOrigin}|${crypto.randomUUID()}`;
-      this.visitKey = visitKey;
-    }
-    this.inspections.set(this.version, { url, fingerprints });
-    if (this.inspections.size > 8)
-      this.inspections.delete(this.inspections.keys().next().value!);
     const limitations: string[] = [];
     if (bodyText.length > 40000)
       limitations.push(
@@ -262,7 +235,6 @@ export class PageRuntime {
         tabId: this.tabId,
         frameId: this.frameId,
         documentId: this.documentId,
-        visitId: this.visitId,
         pageVersion: this.version,
         url,
         title,
@@ -271,7 +243,6 @@ export class PageRuntime {
         vendor,
         observedAt: new Date().toISOString(),
         source,
-        text: text.slice(0, 12000),
       },
       text,
       elements,
@@ -289,20 +260,7 @@ export class PageRuntime {
       const source = this.agentWorking ? "agent" : "user";
       this.timer = setTimeout(() => emit(source), 350);
     };
-    this.observer = new this.doc.defaultView!.MutationObserver((mutations) => {
-      if (
-        mutations.every(
-          (m) =>
-            (m.target as Element).closest?.("[data-close-copilot-ui]") ||
-            (m.type === "childList" &&
-              [...m.addedNodes, ...m.removedNodes].every(
-                (n) => (n as HTMLElement).dataset?.closeCopilotUi,
-              )),
-        )
-      )
-        return;
-      changed();
-    });
+    this.observer = new this.doc.defaultView!.MutationObserver(changed);
     this.observer.observe(this.doc.body, {
       subtree: true,
       childList: true,
@@ -316,11 +274,6 @@ export class PageRuntime {
       this.listeners.push({ type, fn });
     }
     emit("initial");
-  }
-  revisit() {
-    if (!this.onContext) return;
-    this.visitId = `${performance.timeOrigin}|${crypto.randomUUID()}`;
-    this.onContext(this.inspect("user").context);
   }
   unwatch() {
     this.observer?.disconnect();
@@ -374,10 +327,6 @@ export class PageRuntime {
   async execute(
     raw: BrowserCommand,
     signal: AbortSignal,
-    native?: (
-      action: BrowserAction,
-      verify: () => void,
-    ) => Promise<string | void>,
   ): Promise<CommandResult> {
     const command = CommandSchema.parse(raw);
     const base = {
@@ -388,21 +337,8 @@ export class PageRuntime {
     };
     let started = false;
     let interrupted = false;
-    let nativeKey: { element: HTMLElement; key: string; seen: boolean } | null =
-      null;
     const onHuman = (event: Event) => {
-      if (!event.isTrusted) return;
-      if (
-        nativeKey &&
-        event.type === "keydown" &&
-        event.target === nativeKey.element &&
-        (event as KeyboardEvent).key === nativeKey.key &&
-        !nativeKey.seen
-      ) {
-        nativeKey.seen = true;
-        return;
-      }
-      interrupted = true;
+      if (event.isTrusted) interrupted = true;
     };
     const checkActive = () => {
       signal.throwIfAborted();
@@ -422,98 +358,18 @@ export class PageRuntime {
       if (this.seenCommands.size > 1000)
         this.seenCommands.delete(this.seenCommands.values().next().value!);
       checkActive();
-      const action = command.action;
-      const previous = this.inspections.get(command.expectedPageVersion ?? -1);
       const before = this.inspect();
       if (command.tabId !== this.tabId || command.frameId !== this.frameId)
         throw new Error("WRONG_TARGET");
-      const scope = command.scope ?? tabScope(before.context.url);
-      if (!scope || !withinScope(before.context.url, scope))
-        throw new Error(
-          "OUTSIDE_SCOPE: This page left its selected account or document.",
-        );
       if (
-        action.kind !== "inspect" &&
-        command.expectedDocumentId !== this.documentId
+        command.action.kind !== "inspect" &&
+        (command.expectedDocumentId !== this.documentId ||
+          command.expectedPageVersion !== before.context.pageVersion)
       )
         throw new Error("STALE_PAGE: Inspect the page again before acting.");
-      if (action.kind !== "inspect" && action.kind !== "screenshot") {
-        if ("elementId" in action) {
-          const described = before.elements.find(
-            (e) => e.id === action.elementId,
-          );
-          const element = this.elements.get(action.elementId);
-          if (
-            !previous ||
-            previous.url !== before.context.url ||
-            !described ||
-            !element?.isConnected ||
-            previous.fingerprints.get(action.elementId) !==
-              targetFingerprint(element, described)
-          )
-            throw new Error(
-              "STALE_PAGE: The target changed. Inspect the page again before acting.",
-            );
-        } else if (command.expectedPageVersion !== before.context.pageVersion)
-          throw new Error("STALE_PAGE: Inspect the page again before acting.");
-      }
+      const action = command.action;
       if (action.kind === "inspect")
         return { ...base, status: "ok", observation: before };
-      if (action.kind === "screenshot") {
-        if (!native)
-          throw new Error(
-            "SCREENSHOT_UNAVAILABLE: Screenshots require the Chrome extension.",
-          );
-        const verify = () => {
-          checkActive();
-          if (!withinScope(this.doc.location.href, scope))
-            throw new Error("OUTSIDE_SCOPE");
-        };
-        const screenshot = await native(action, verify);
-        verify();
-        if (typeof screenshot !== "string")
-          throw new Error("SCREENSHOT_UNAVAILABLE");
-        return {
-          ...base,
-          status: "ok",
-          observation: this.inspect("agent"),
-          screenshot,
-        };
-      }
-      if (action.kind === "navigate") {
-        if (
-          !withinScope(action.url, scope) ||
-          /[?&](action|mode)=(delete|save|submit|approve)/i.test(action.url) ||
-          !before.elements.some((e) => e.href === action.url && !e.blocked)
-        )
-          throw new Error(
-            "ACTION_BLOCKED: Navigate only to a safe link observed in this selected account.",
-          );
-        const link = before.elements.find(
-          (e) => e.href === action.url && !e.blocked,
-        )!;
-        const { element } = this.target(link.id, before);
-        if (
-          ["bill_form", "vendor_form"].includes(before.context.workflow) &&
-          before.elements.some(
-            (e) =>
-              e.value?.trim() &&
-              /^(invoice number|reference no\.?|company name|vendor name|memo)$/i.test(
-                e.label,
-              ),
-          )
-        )
-          throw new Error(
-            "UNSAVED_FORM: Review the edited form before leaving this page.",
-          );
-        checkActive();
-        started = true;
-        if (native) await native(action, checkActive);
-        else element.click();
-        await new Promise((r) => setTimeout(r, 200));
-        checkActive();
-        return { ...base, status: "ok", observation: this.inspect("agent") };
-      }
       if (action.kind === "check_vendor") {
         if (command.phase !== "vendor_setup" || this.app !== "netsuite")
           throw new Error(
@@ -527,6 +383,10 @@ export class PageRuntime {
         };
       }
       this.agentWorking = true;
+      if (action.kind === "screenshot")
+        throw new Error(
+          "SCREENSHOT_UNAVAILABLE: Use the Chrome extension capture command.",
+        );
       if (action.kind === "prepare_vendor") {
         if (
           command.phase !== "vendor_setup" ||
@@ -798,10 +658,9 @@ export class PageRuntime {
               "ACTION_BLOCKED: Use the reviewed bill-preparation command.",
             );
           if (
-            !isSearchField(element, described.label, this.app) ||
+            !this.isSearchLabel(described.label) ||
             described.readOnly ||
-            (!["input", "textarea", "select"].includes(described.tag) &&
-              !element.isContentEditable)
+            !["input", "textarea", "select"].includes(described.tag)
           )
             throw new Error(
               "ACTION_BLOCKED: Investigation can type only into search or filter fields.",
@@ -814,60 +673,34 @@ export class PageRuntime {
           started = true;
           this.write(element, action.value);
         } else if (action.kind === "key") {
-          if (
-            ["Enter", "ArrowDown", "ArrowUp"].includes(action.key) &&
-            !isSearchField(element, described.label, this.app)
-          )
+          if (action.key === "Enter" && !this.isSearchLabel(described.label))
             throw new Error(
-              "ACTION_BLOCKED: Enter and arrow keys are only permitted in search fields.",
+              "ACTION_BLOCKED: Enter is only permitted in search fields.",
             );
-          element.focus();
-          const fingerprint = targetFingerprint(element, described);
-          const verify = () => {
-            checkActive();
-            if (
-              this.doc.location.href !== before.context.url ||
-              this.doc.activeElement !== element ||
-              !element.isConnected ||
-              fingerprint !== targetFingerprint(element, this.describe(element))
-            )
-              throw new Error(
-                "STALE_TARGET: Keyboard focus or control changed; inspect again.",
-              );
-          };
-          verify();
           started = true;
-          if (native) {
-            nativeKey = { element, key: action.key, seen: false };
-            try {
-              await native(action, verify);
-            } finally {
-              nativeKey = null;
-            }
-          } else {
-            const win = this.doc.defaultView!;
-            element.dispatchEvent(
-              new win.KeyboardEvent("keydown", {
-                key: action.key,
-                code: action.key,
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-            element.dispatchEvent(
-              new win.KeyboardEvent("keyup", {
-                key: action.key,
-                code: action.key,
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-          }
+          element.focus();
+          const win = this.doc.defaultView!;
+          element.dispatchEvent(
+            new win.KeyboardEvent("keydown", {
+              key: action.key,
+              code: action.key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          element.dispatchEvent(
+            new win.KeyboardEvent("keyup", {
+              key: action.key,
+              code: action.key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
         } else {
           if (described.href) {
             const target = new URL(described.href, before.context.url);
             if (
-              !withinScope(target.href, scope) ||
+              target.origin !== new URL(before.context.url).origin ||
               !["http:", "https:"].includes(target.protocol) ||
               /[?&](action|mode)=(delete|save|submit|approve)/i.test(
                 target.href,
@@ -919,21 +752,14 @@ export async function inspectAfterNavigation(
   },
   timeoutMs = 10000,
 ): Promise<CommandResult | null> {
-  if (
-    !["click", "navigate"].includes(command.action.kind) ||
-    !command.expectedDocumentId
-  )
+  if (command.action.kind !== "click" || !command.expectedDocumentId)
     return null;
   const source = new URL(sourceUrl);
   if (!["http:", "https:"].includes(source.protocol)) return null;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline && io.active()) {
     const tab = await io.tab();
-    if (
-      !tab?.url ||
-      !withinScope(tab.url, command.scope ?? tabScope(sourceUrl) ?? "")
-    )
-      return null;
+    if (!tab?.url || new URL(tab.url).origin !== source.origin) return null;
     if (tab.status === "complete") {
       try {
         const result = await io.inspect({
@@ -950,10 +776,7 @@ export async function inspectAfterNavigation(
             command.expectedDocumentId &&
           result.observation.context.tabId === command.tabId &&
           result.observation.context.frameId === command.frameId &&
-          withinScope(
-            result.observation.context.url,
-            command.scope ?? tabScope(sourceUrl) ?? "",
-          )
+          new URL(result.observation.context.url).origin === source.origin
         ) {
           result.observation.limitations.push(
             "The click reply was interrupted by navigation. This observation verifies the new document; the click was not repeated.",

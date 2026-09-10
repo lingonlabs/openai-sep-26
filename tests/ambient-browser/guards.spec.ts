@@ -64,7 +64,7 @@ test("blocks saving, arbitrary field edits, and stale page actions", async ({
     (
       await run(
         page,
-        { kind: "click", elementId: info.invoice },
+        { kind: "click", elementId: info.save },
         { expectedPageVersion: info.pageVersion },
       )
     ).code,
@@ -281,98 +281,4 @@ test("a human interaction interrupts preparation and reports partial outcome", a
   expect(result.code).toBe("USER_INTERRUPTED");
   expect(result.outcome).toBe("unknown");
   await expect(page.locator("body")).not.toHaveAttribute("data-saved", "true");
-});
-
-test("an unchanged search target survives mailbox updates; changed or replaced controls stop", async ({
-  page,
-}) => {
-  await page.setContent(
-    '<div role="search"><input aria-label="Ask Gmail" name="q"></div><p id="count">1 unread</p>',
-  );
-  const result = await page.evaluate(async () => {
-    const r = new (window as any).TestRuntime(document, "ns", "gmail");
-    const initial = r.inspect(),
-      target = initial.elements[0];
-    const command = () => ({
-      type: "browser.command",
-      commandId: crypto.randomUUID(),
-      workspaceId: "w",
-      taskId: "t",
-      tabId: "ns",
-      frameId: 0,
-      phase: "chat",
-      expectedDocumentId: initial.context.documentId,
-      expectedPageVersion: initial.context.pageVersion,
-      action: { kind: "fill", elementId: target.id, value: "invoice" },
-    });
-    document.getElementById("count")!.textContent = "2 unread";
-    const stable = await r.execute(command(), new AbortController().signal);
-    const changed = await r.execute(command(), new AbortController().signal);
-    const current = r.inspect();
-    document
-      .querySelector("input")!
-      .replaceWith(document.querySelector("input")!.cloneNode(true));
-    const replaced = await r.execute(
-      { ...command(), expectedPageVersion: current.context.pageVersion },
-      new AbortController().signal,
-    );
-    return { stable, changed, replaced };
-  });
-  expect(result.stable.status).toBe("ok");
-  expect(result.changed.code).toBe("STALE_PAGE");
-  expect(result.replaced.code).toBe("STALE_PAGE");
-});
-
-test("new-bill visits reset after leaving, while existing bill records do not offer new entry", async ({
-  page,
-}) => {
-  const visits = await page.evaluate(() => {
-    const r = (window as any).runtime;
-    const a = r.inspect().context;
-    document.body.dataset.workflow = "bill_list";
-    r.inspect();
-    document.body.dataset.workflow = "bill_form";
-    const b = r.inspect().context;
-    delete document.body.dataset.workflow;
-    history.replaceState(null, "", "/demo/netsuite?id=123");
-    const existing = r.inspect().context;
-    return { a, b, existing };
-  });
-  expect(visits.a.visitId).not.toBe(visits.b.visitId);
-  expect(visits.existing.workflow).not.toBe("bill_form");
-});
-
-test("direct navigation rejects unobserved links, mutation URLs and leaving edited forms", async ({
-  page,
-}) => {
-  const urls = await page.evaluate(() => {
-    const safe = new URL("#recorded", location.href).href;
-    const mutation = new URL("?action=delete", location.href).href;
-    for (const href of [safe, mutation]) {
-      const link = document.createElement("a");
-      link.href = href;
-      link.textContent = "View record";
-      document.body.append(link);
-    }
-    return {
-      safe,
-      mutation,
-      unobserved: new URL("#unobserved", location.href).href,
-    };
-  });
-  expect(
-    (await run(page, { kind: "navigate", url: urls.unobserved })).code,
-  ).toBe("ACTION_BLOCKED");
-  expect((await run(page, { kind: "navigate", url: urls.mutation })).code).toBe(
-    "ACTION_BLOCKED",
-  );
-  await page
-    .getByRole("textbox", { name: "Invoice number", exact: true })
-    .fill("USER-DRAFT");
-  expect((await run(page, { kind: "navigate", url: urls.safe })).code).toBe(
-    "UNSAVED_FORM",
-  );
-  await expect(
-    page.getByRole("textbox", { name: "Invoice number", exact: true }),
-  ).toHaveValue("USER-DRAFT");
 });

@@ -45,7 +45,7 @@ Choose **Resolve vendor** on a finding or a vendor-related preparation error, or
 
 After a complete check with no matches, it prepares a new company vendor form and displays the proposed fields. Fill any additional required fields directly in NetSuite and choose **Refresh vendor review**. **Create vendor in NetSuite** is the separate approval that permits one Save of that exact reviewed vendor form. Changing its fields invalidates the approval. **Not now** leaves the form unsaved.
 
-Creation is verified against the resulting saved vendor record. Interrupted saves are resolved with read-only inspection and never automatically repeated; an unresolved outcome stays locked for manual review. Creating a vendor does not mark onboarding approved or save an invoice or bill. The end-to-end flow is tested in both the synthetic workbench and the packaged Chrome extension; actual sandbox vendor creation still needs a rehearsal after reloading extension version **0.4.0**.
+Creation is verified against the resulting saved vendor record. Interrupted saves are resolved with read-only inspection and never automatically repeated; an unresolved outcome stays locked for manual review. Creating a vendor does not mark onboarding approved or save an invoice or bill. The end-to-end flow is tested in both the synthetic workbench and the packaged Chrome extension; actual sandbox vendor creation still needs a rehearsal after reloading extension version **0.3.0**.
 
 ## Load the Chrome extension
 
@@ -57,11 +57,7 @@ Creation is verified against the resulting saved vendor record. Interrupted save
 
 The extension’s workspace picker shows only tabs and workspaces belonging to that Chrome profile. The local workbench keeps its synthetic workspace separate.
 
-The floating icon offers invoice checks and shows live progress, Stop, pause/resume, and remove-tab controls. Its position is remembered. The panel also provides **Edit workspace**, Markdown conversation, elapsed time, retained browser errors, captured sources, and **Continue task** follow-ups. A workspace can contain one selected application for chat; invoice investigations require both Gmail and NetSuite.
-
-Open **Help me with…** to save standing instructions for invoice checks, vendor changes, or other moments when you want help. Astra remembers observed visits, responses and task outcomes in the workspace. Offers provide choices plus a free-text request; dismissing an offer does not execute work. Pause ambient help or clear its remembered context from this panel. Background observation stops during execution and resumes with a fresh baseline afterward.
-
-Pause individual tabs, pause the workspace, remove a tab, or stop the current task from the panel. Switching workspaces stops the previous controlling task. Reconnects restore observation, never replay actions. Reloading the extension preserves its selected tabs and reconnects observation. A full Chrome restart clears stale tab IDs; use Edit workspace to reselect them. Reload the extension after rebuilding it; refresh watched pages if Chrome requests it. Version 0.4.0 adds the debugger permission for native search keystrokes and selected-tab screenshots.
+Pause individual tabs, pause the workspace, remove a tab, or stop the current task from the panel. Switching workspaces stops the previous controlling task. Reconnects restore observation, never replay actions. Reload the extension and watched pages after rebuilding it.
 
 ## Architecture
 
@@ -74,7 +70,7 @@ Pause individual tabs, pause the workspace, remove a tab, or stop the current ta
 | `packages/browser` | DOM observations, stable element handles, stale-page checks, constrained actions and verified form writes |
 | `packages/ui`      | Shared React panel, Tailwind styling, shadcn-style Radix/CVA button primitives                            |
 
-The persistent ambient agent receives bounded selected-page text and current offers, without browser tools; each investigation, preparation, and chat task has its own SQLite-backed SDK session. The workspace retains a compact summary. Tasks and commands carry workspace/task/command IDs; preparation points to its parent investigation. Selected observations leave the machine for OpenAI inference. API keys remain server-side; response storage and SDK tracing are disabled. History and captured source text stay in `.local/close-copilot.sqlite`, excluded from Git.
+The coordinator receives small context events; each investigation, preparation, and chat task has its own SQLite-backed SDK session. The workspace retains a compact summary. Tasks and commands carry workspace/task/command IDs; preparation points to its parent investigation. Selected observations leave the machine for OpenAI inference. API keys remain server-side; response storage and SDK tracing are disabled. History and captured source text stay in `.local/close-copilot.sqlite`, excluded from Git.
 
 ## Verification
 
@@ -91,14 +87,10 @@ Unit and transport tests cover evidence validation, exact matching, workspace bo
 
 ## Current limits
 
-- Real NetSuite custom fields, vendor widgets, line sublists, frames, Gmail attachments, and Sheets canvas rendering require the dedicated-profile rehearsal. The Chrome extension reads DOM text and can capture the visible viewport for the model, including visible attachment viewers and canvas content. Search keys use native browser input after validating the target. Screenshot-only invoice fields remain marked for review. There is no general iframe action tool, coordinate clicking, or PDF download processor; unsupported forms stop with a visible error.
+- Real NetSuite custom fields, vendor widgets, line sublists, frames, Gmail attachments, and Sheets canvas rendering require the dedicated-profile rehearsal. This version reads visible DOM text and labels. It does not OCR PDFs, capture screenshots for the model, or inject trusted native keyboard events. Unsupported forms stop with a visible error.
 - USD bill preparation requires an observable USD currency field and uniquely identified vendor, invoice number, date, and amount controls. The vendor must already exist. Account/line coding, tax and period remain human review steps. Conflicting existing bill details are never overwritten automatically.
-- Exact matches compare vendor, invoice number, currency and amount. Fields used for automatic preparation eligibility must be present in captured text; screenshot-only fields remain marked for human review. This is an evidence check, not a guarantee that an entire account or every attachment was searched. Semantic interpretation still requires human review.
+- Exact matches compare vendor, invoice number, currency and amount. Cited fields must be present in captured text. This is an evidence check, not a guarantee that an entire account or every attachment was searched. Semantic interpretation still requires human review.
 - Stop or disconnect can leave partial edits. Unknown outcomes stop the task instead of retrying. Inspect the form before starting again.
 - Local SQLite is a single-process prototype store, not an encrypted multi-user service. No application OAuth, account connectors, deployment, unattended submission, or scheduled background runs are included. Vendor saving requires explicit approval of the current review.
 
 The former journal-entry prototype remains under `src/` and the local tag `journal-prototype-v0.1`. Its separate run commands are documented in [JOURNAL_PROTOTYPE.md](docs/JOURNAL_PROTOTYPE.md). Team planning lives in the separate `coordination` worktree; implementation notes are in [PHILIPP_HANDOFF.md](docs/PHILIPP_HANDOFF.md).
-
-## Combined prototype
-
-[Philipp integration](docs/PHILIPP_INTEGRATION.md) maps the imported behavior from `prototype/ambient-local` into Close Copilot. The current visual design, invoice validation, and explicit vendor approval remain the foundation.

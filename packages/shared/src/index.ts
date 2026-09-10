@@ -36,10 +36,6 @@ export const ContextSchema = z.object({
   vendor: z.string().max(300).nullable(),
   observedAt: z.string(),
   source: z.enum(["initial", "user", "agent"]),
-  visitId: Id.optional(),
-  text: z.string().max(16000).optional(),
-  baseline: z.boolean().optional(),
-  ambientEpoch: z.number().optional(),
 });
 export type PageContext = z.infer<typeof ContextSchema>;
 export const ElementSchema = z.object({
@@ -156,7 +152,6 @@ export const ActionSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("scroll"), direction: z.enum(["up", "down"]) }),
   z.object({ kind: z.literal("screenshot") }),
-  z.object({ kind: z.literal("navigate"), url: z.string().url().max(4000) }),
   z.object({ kind: z.literal("prepare_bill"), values: BillValuesSchema }),
   z.object({ kind: z.literal("check_vendor"), name: z.string().min(1) }),
   z.object({ kind: z.literal("prepare_vendor"), values: VendorValuesSchema }),
@@ -184,7 +179,6 @@ export const CommandSchema = z.object({
   ]),
   expectedDocumentId: Id.nullable(),
   expectedPageVersion: z.number().int().nonnegative().nullable(),
-  scope: z.string().optional(),
   action: ActionSchema,
 });
 export type BrowserCommand = z.infer<typeof CommandSchema>;
@@ -196,11 +190,7 @@ export const CommandResultSchema = z.discriminatedUnion("status", [
     taskId: Id,
     status: z.literal("ok"),
     observation: ObservationSchema,
-    screenshot: z
-      .string()
-      .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/)
-      .max(8_000_000)
-      .optional(),
+    screenshot: z.string().max(2_000_000).optional(),
     vendorCheck: VendorCheckSchema.optional(),
     vendorReview: VendorReviewSchema.optional(),
     changes: z
@@ -230,7 +220,6 @@ export const ClientMessageSchema = z
       role: z.enum(["browser", "ui"]),
       name: z.string().max(100),
       synthetic: z.boolean(),
-      sessionId: Id.optional(),
     }),
     z.object({
       type: z.literal("browser.inventory"),
@@ -266,15 +255,8 @@ export interface Workspace {
   contexts: Record<string, PageContext>;
   dismissed: Record<string, number>;
   summary: string;
-  tabScopes?: Record<string, string>;
 }
 export interface Suggestion {
-  options?: ActionOption[];
-  sourceUrl?: string;
-  visitId?: string;
-  instructionId?: string;
-  reason?: string;
-  key?: string;
   id: string;
   workspaceId: string;
   tabId: string;
@@ -302,7 +284,6 @@ export interface Task {
   candidateId: string | null;
 }
 export interface Evidence {
-  screenshot?: string;
   id: string;
   taskId: string;
   workspaceId: string;
@@ -328,11 +309,6 @@ export interface Finding extends BillValues {
   searchLimitations: string[];
 }
 export interface Activity {
-  evidenceId?: string;
-  commandId?: string;
-  status?: "working" | "done" | "error";
-  detail?: string;
-  error?: string;
   id: string;
   workspaceId: string;
   taskId: string | null;
@@ -357,7 +333,6 @@ export interface BridgeView {
   activeWorkspaceId: string | null;
 }
 export interface AppState {
-  ambient?: AmbientStatus[];
   mode: "live" | "demo";
   model: string;
   apiConfigured: boolean;
@@ -405,56 +380,9 @@ export function toCents(value: string): bigint {
 export function contextKey(context: PageContext) {
   return [
     context.documentId,
-    context.visitId ?? "",
     context.workflow,
     normalize(context.vendor ?? ""),
   ].join("|");
-}
-// Preserve the selected Gmail account and Sheet document across navigation.
-export function tabScope(url: string): string | null {
-  try {
-    const u = new URL(url);
-    if (!["http:", "https:"].includes(u.protocol) || u.username || u.password)
-      return null;
-    if (u.hostname === "mail.google.com") {
-      const account = u.pathname.match(/^\/mail\/u\/[^/]+(?:\/|$)/)?.[0];
-      return account ? u.origin + account.replace(/\/$/, "") + "/" : null;
-    }
-    if (u.hostname === "docs.google.com") {
-      const document = u.pathname.match(/^\/spreadsheets\/d\/[^/]+/)?.[0];
-      return document ? u.origin + document + "/" : null;
-    }
-    if (["localhost", "127.0.0.1"].includes(u.hostname))
-      return u.pathname.startsWith("/demo/") ? u.origin + "/demo/" : null;
-    return u.origin + "/";
-  } catch {
-    return null;
-  }
-}
-export function withinScope(url: string, scope: string): boolean {
-  try {
-    const u = new URL(url),
-      allowed = new URL(scope);
-    return (
-      !u.username &&
-      !u.password &&
-      u.origin === allowed.origin &&
-      u.pathname.startsWith(allowed.pathname)
-    );
-  } catch {
-    return false;
-  }
-}
-export function taskProgress(task: Task, activities: Activity[]): string {
-  const latest = activities
-    .filter((a) => a.taskId === task.id && a.commandId)
-    .at(-1);
-  if (task.status !== "running")
-    return task.error || task.summary || "Task finished";
-  if (!latest) return task.title;
-  if (latest.status === "working") return latest.message;
-  if (latest.status === "error") return "Reviewing the browser error…";
-  return `Considering the next step after: ${latest.message}`;
 }
 export function moneyLabel(amount: string, currency = "USD") {
   return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(
@@ -533,7 +461,6 @@ export function assessInvoices(
   taskId: string,
 ): Finding[] {
   const known = new Map(evidence.map((e) => [e.id, e]));
-  const visualSources = new Set<string>();
   const check = (ids: string[], tokens: string[], app?: AppKind) => {
     if (!ids.length || ids.some((id) => !known.has(id)))
       throw new Error("Finding cites missing source evidence");
@@ -545,16 +472,10 @@ export function assessInvoices(
       .toLowerCase()
       .replace(/[,\s$€£]/g, "");
     for (const token of tokens)
-      if (
-        token &&
-        !text.includes(token.toLowerCase().replace(/[,\s$€£]/g, ""))
-      ) {
-        if (!ids.some((id) => known.get(id)?.screenshot))
-          throw new Error(
-            "Finding fields are not supported by the cited observations",
-          );
-        for (const id of ids) visualSources.add(id);
-      }
+      if (token && !text.includes(token.toLowerCase().replace(/[,\s$€£]/g, "")))
+        throw new Error(
+          "Finding fields are not supported by the cited observations",
+        );
   };
   for (const bill of extraction.recordedBills)
     check(
@@ -608,38 +529,29 @@ export function assessInvoices(
         (other.currency !== invoice.currency ||
           other.amount !== invoice.amount),
     );
-    const visualOnly = [
-      ...invoice.evidenceIds,
-      ...similar.flatMap((b) => b.evidenceIds),
-      ...(vendor?.evidenceIds ?? []),
-    ].some((id) => visualSources.has(id));
     const placeholderVendor = isPlaceholderVendor(invoice.vendor);
-    const status = visualOnly
+    const status = placeholderVendor
       ? "needs_review"
-      : placeholderVendor
+      : contradictory
         ? "needs_review"
-        : contradictory
-          ? "needs_review"
-          : exact
-            ? "recorded"
-            : similar.length
-              ? "needs_review"
-              : vendor?.status === "pending"
-                ? "vendor_review"
-                : "candidate";
-    const reason = visualOnly
-      ? "Some invoice details were read from a screenshot and could not be verified in captured text. Review the source image before preparing a bill."
-      : placeholderVendor
-        ? "The invoice vendor is a placeholder. Provide the exact existing vendor name before preparing."
-        : contradictory
-          ? "Invoice evidence disagrees on amount or currency. Resolve the conflicting sources before preparing."
-          : exact
-            ? `Matches ${exact.recordId}: vendor, invoice number, currency, and amount agree.`
-            : similar.length
-              ? "A matching vendor and invoice number has a different amount or currency. Review before preparing."
-              : vendor?.status === "pending"
-                ? "Vendor onboarding is pending. Resolve it before preparing the bill."
-                : "No matching bill was found in the records checked. Review the evidence before preparing.";
+        : exact
+          ? "recorded"
+          : similar.length
+            ? "needs_review"
+            : vendor?.status === "pending"
+              ? "vendor_review"
+              : "candidate";
+    const reason = placeholderVendor
+      ? "The invoice vendor is a placeholder. Provide the exact existing vendor name before preparing."
+      : contradictory
+        ? "Invoice evidence disagrees on amount or currency. Resolve the conflicting sources before preparing."
+        : exact
+          ? `Matches ${exact.recordId}: vendor, invoice number, currency, and amount agree.`
+          : similar.length
+            ? "A matching vendor and invoice number has a different amount or currency. Review before preparing."
+            : vendor?.status === "pending"
+              ? "Vendor onboarding is pending. Resolve it before preparing the bill."
+              : "No matching bill was found in the records checked. Review the evidence before preparing.";
     return [
       {
         ...invoice,
@@ -673,52 +585,3 @@ export function assessInvoices(
     ];
   });
 }
-
-export const HelpInstructionSchema = z.object({
-  id: z.string().max(100),
-  text: z.string().min(1).max(2000),
-  enabled: z.boolean(),
-});
-export type HelpInstruction = z.infer<typeof HelpInstructionSchema>;
-export const AmbientPreferencesSchema = z.object({
-  enabled: z.boolean(),
-  instructions: z.array(HelpInstructionSchema).max(12),
-});
-export type AmbientPreferences = z.infer<typeof AmbientPreferencesSchema>;
-export type ActionOption = {
-  label: string;
-  prompt: string;
-  kind?: "task" | "dismiss";
-};
-export type AmbientStatus = {
-  workspaceId: string;
-  preferences: AmbientPreferences;
-  status: "watching" | "evaluating" | "paused" | "task_active" | "error";
-  summary: string;
-  reason: string;
-  lastChecked: number | null;
-  error?: string;
-  epoch: number;
-  recent: { at: number; kind: string; text: string }[];
-  visits: { url: string; title: string; count: number; lastSeen: number }[];
-};
-export const defaultAmbientPreferences = (): AmbientPreferences => ({
-  enabled: true,
-  instructions: [
-    {
-      id: "invoices",
-      text: "When I open an invoice or a new bill, offer to check the supporting email and whether it is already recorded in NetSuite.",
-      enabled: true,
-    },
-    {
-      id: "vendors",
-      text: "When a new vendor appears in my onboarding sheet, offer to check NetSuite and prepare a vendor record for review.",
-      enabled: true,
-    },
-    {
-      id: "revisits",
-      text: "If I repeatedly return to the same page or seem stuck after a failed task, ask whether I would like help. Do not assume something is wrong.",
-      enabled: true,
-    },
-  ],
-});

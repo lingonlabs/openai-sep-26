@@ -50,7 +50,7 @@ export async function createApp(options: AppOptions) {
       .header("X-Content-Type-Options", "nosniff")
       .header("Referrer-Policy", "no-referrer");
   });
-  await app.register(websocket, { options: { maxPayload: 12_000_000 } });
+  await app.register(websocket, { options: { maxPayload: 2_500_000 } });
   const send = (socket: WebSocket, value: unknown) => {
     if (socket.readyState === 1) socket.send(JSON.stringify(value));
   };
@@ -99,7 +99,6 @@ export async function createApp(options: AppOptions) {
               id: identity.id,
               name: message.name,
               synthetic: message.synthetic,
-              sessionId: message.sessionId,
               tabs: [],
               activeWorkspaceId: null,
               send: (value) => send(socket, value),

@@ -58,9 +58,6 @@ function Workbench() {
   const frames = useRef(new Map<string, HTMLIFrameElement>());
   const runtimes = useRef(new Map<string, PageRuntime>());
   const workspace = useRef<Workspace | null>(null);
-  const ambientState = useRef<AppState["ambient"]>([]);
-  const monitorSignatures = useRef(new Map<string, string>());
-  const baselineTabs = useRef(new Set<string>());
   const aborters = useRef(new Map<string, AbortController>());
   const tabs = () =>
     definitions.map((d) => ({
@@ -76,24 +73,10 @@ function Workbench() {
     }));
   const watch = () => {
     const w = workspace.current;
-    const ambient = ambientState.current?.find((a) => a.workspaceId === w?.id);
     for (const [id, runtime] of runtimes.current) {
-      if (w?.activeTaskId) baselineTabs.current.add(id);
-      const enabled =
-        w &&
-        !w.activeTaskId &&
-        !w.paused &&
-        w.tabIds.includes(id) &&
-        !w.pausedTabIds.includes(id) &&
-        ambient?.preferences.enabled !== false &&
-        (ambient?.preferences.instructions.some((i) => i.enabled) ?? true);
-      const signature = JSON.stringify([w?.id, !!enabled, ambient?.epoch]);
-      if (monitorSignatures.current.get(id) === signature) continue;
-      monitorSignatures.current.set(id, signature);
       runtime.unwatch();
       if (
         w &&
-        enabled &&
         !w.paused &&
         w.tabIds.includes(id) &&
         !w.pausedTabIds.includes(id)
@@ -102,17 +85,12 @@ function Workbench() {
           client.current?.send({
             type: "browser.context",
             workspaceId: w.id,
-            context: {
-              ...context,
-              baseline: baselineTabs.current.delete(id),
-              ambientEpoch: ambient?.epoch,
-            },
+            context,
           }),
         );
     }
   };
   const ready = (id: string) => {
-    monitorSignatures.current.delete(id);
     const frame = frames.current.get(id),
       definition = definitions.find((d) => d.id === id)!;
     if (!frame?.contentDocument) return;
@@ -147,11 +125,8 @@ function Workbench() {
       }
     };
     bridge.onMessage = async (message: ServerMessage) => {
-      if (message.type === "welcome" || message.type === "state") {
+      if (message.type === "welcome" || message.type === "state")
         setState(message.state);
-        ambientState.current = message.state.ambient;
-        watch();
-      }
       if (message.type === "error") setPairError(message.message);
       if (message.type === "browser.watch") {
         workspace.current = message.workspace;

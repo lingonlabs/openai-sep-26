@@ -29,12 +29,8 @@ For contract changes, edit the shared schema and both endpoints together; run `p
 
 ## Remaining integration work
 
-The real Gmail test message, NetSuite Bill form, and Bills list have been inspected. The actual bill's vendor picker and line sublists still need an adapter. The new vendor creation flow has been tested with synthetic records through the workbench and packaged extension; real sandbox vendor creation is not yet validated. Reload extension 0.4.0 and refresh watched tabs before that rehearsal. Selected-tab screenshots can support visual reading of visible attachments and canvas content; hidden rows and unsupported viewers still need manual review.
+The real Gmail test message, NetSuite Bill form, and Bills list have been inspected. The actual bill's vendor picker and line sublists still need an adapter. The new vendor creation flow has been tested with synthetic records through the workbench and packaged extension; real sandbox vendor creation is not yet validated. Reload extension 0.3.0 and refresh watched tabs before that rehearsal. Gmail attachments and canvas-only Sheets content are not yet extracted.
 
 Prepare the dedicated logged-in profile and actual sample invoice. Confirm the expected expense account, tax and posting period. Validate a read-only investigation before attempting unsaved preparation. Review unsupported fields manually; this version never submits a bill.
 
 Application work is on `julie-local`; coordination notes remain on the separate planning branch. The planning branch should not be merged into application code.
-
-## Combined prototype update
-
-Julie requested the current Close Copilot styling with the functionality from both prototypes. The integration of `prototype/ambient-local` through `a344ba0` is documented in [PHILIPP_INTEGRATION.md](PHILIPP_INTEGRATION.md). Extension 0.4.0 adds native search keys, selected-tab screenshots, the floating action menu, richer activity, Markdown/streaming chat, task follow-ups, workspace editing browser-session restoration, persistent ambient memory, standing instructions, and action choices. Real custom NetSuite bill entry and actual vendor creation still require a supervised rehearsal; existing vendor approvals and no-bill-Save rules remain in place.

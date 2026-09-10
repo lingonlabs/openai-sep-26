@@ -172,28 +172,3 @@ test("wire protocol accepts browser hello and both explicit command outcomes", a
     false,
   );
 });
-
-test("screenshot-only invoice fields stay in human review instead of becoming preparation candidates", () => {
-  const visualEvidence = evidence.map((source) =>
-    source.id === "email"
-      ? {
-          ...source,
-          text: "Invoice attachment viewer",
-          screenshot: "data:image/png;base64,aW1hZ2U=",
-        }
-      : source,
-  );
-  const finding = assessInvoices(extraction(), visualEvidence, "w", "t")[0];
-  assert.equal(finding.status, "needs_review");
-  assert.match(finding.reason, /screenshot/);
-  assert.throws(
-    () =>
-      assessInvoices(
-        extraction(),
-        visualEvidence.map((source) => ({ ...source, screenshot: undefined })),
-        "w",
-        "t",
-      ),
-    /not supported/,
-  );
-});
